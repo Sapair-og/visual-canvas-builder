@@ -14,7 +14,7 @@ interface ExportModalProps {
 }
 
 export default function ExportModal({ isOpen, onClose, pages, currentPageId }: ExportModalProps) {
-  const { showToast, dbConfig, dbTables, customScripts, backendServices } = useEditor();
+  const { showToast, dbConfig, dbTables, customScripts, backendServices, themeTokens, logicFlows } = useEditor();
   const [activeTab, setActiveTab] = useState<'react' | 'html'>('react');
   const [copied, setCopied] = useState(false);
   const [code, setCode] = useState('');
@@ -32,8 +32,8 @@ export default function ExportModal({ isOpen, onClose, pages, currentPageId }: E
 
   // Compute compiled files on the fly
   const compiled = activeTab === 'react'
-    ? generateReactCode(pages, dbConfig, dbTables, customScripts, backendServices)
-    : generateHtmlCode(pages, dbConfig, dbTables, customScripts, backendServices);
+    ? generateReactCode(pages, dbConfig, dbTables, customScripts, backendServices, themeTokens, logicFlows)
+    : generateHtmlCode(pages, dbConfig, dbTables, customScripts, backendServices, themeTokens, logicFlows);
 
   const fileKeys = Object.keys(compiled);
 

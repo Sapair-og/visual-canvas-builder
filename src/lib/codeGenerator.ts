@@ -1,9 +1,29 @@
-import { CanvasNode } from '../types/canvas';
+import { CanvasNode, ThemeTokens, LogicFlow } from '../types/canvas';
 import { DatabaseConfig, DatabaseTable } from '../types/database';
 
 // Helper to convert camelCase style keys to kebab-case CSS keys for HTML
 const kebabCase = (str: string): string => {
   return str.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase();
+};
+
+const resolveThemeVal = (val: any) => {
+  if (typeof val !== 'string') return val;
+  if (val.startsWith('theme-')) {
+    const k = val.replace('theme-', '');
+    return `var(--color-${k})`;
+  }
+  if (val === 'primary' || val === 'secondary' || val === 'accent' || val === 'background' || val === 'text') {
+    return `var(--color-${val})`;
+  }
+  return val;
+};
+
+const resolveThemeFont = (val: any) => {
+  if (typeof val !== 'string') return val;
+  if (val === 'heading' || val === 'body') {
+    return `var(--font-${val})`;
+  }
+  return val;
 };
 
 // Map custom style keys to CSS/React properties
@@ -12,9 +32,17 @@ const mapStyleProps = (styleObj: any) => {
   Object.entries(styleObj).forEach(([key, val]) => {
     if (val === undefined || val === '') return;
     
+    // Resolve theme variables
+    let resolvedVal = val;
+    if (key === 'textColor' || key === 'backgroundColor' || key === 'borderColor') {
+      resolvedVal = resolveThemeVal(val);
+    } else if (key === 'fontFamily') {
+      resolvedVal = resolveThemeFont(val);
+    }
+
     // Map custom 'textColor' to standard 'color'
     if (key === 'textColor') {
-      result.color = val;
+      result.color = resolvedVal;
     } else if (key === 'backgroundImage') {
       // If it's a linear gradient or url, we keep it as is, otherwise wrap in url
       if (typeof val === 'string' && !val.startsWith('linear-gradient') && !val.startsWith('url(')) {
@@ -25,7 +53,7 @@ const mapStyleProps = (styleObj: any) => {
       result.backgroundSize = 'cover';
       result.backgroundPosition = 'center';
     } else {
-      result[key] = val;
+      result[key] = resolvedVal;
     }
   });
   return result;
@@ -113,7 +141,9 @@ export function generateReactCode(
   dbConfig: DatabaseConfig | null = null,
   dbTables: DatabaseTable[] = [],
   customScripts: Record<string, string> = {},
-  backendServices: any[] = []
+  backendServices: any[] = [],
+  themeTokens?: ThemeTokens,
+  logicFlows: LogicFlow[] = []
 ): Record<string, string> {
   const result: Record<string, string> = {};
 
@@ -203,7 +233,29 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
   }
 
-  // 2. Generate react pages
+  // 2. Generate CSS Variables block
+  const colors = themeTokens?.colors || {
+    primary: '#3b82f6',
+    secondary: '#10b981',
+    accent: '#8b5cf6',
+    background: '#0f172a',
+    text: '#f8fafc'
+  };
+  const fonts = themeTokens?.fonts || {
+    heading: 'Geist',
+    body: 'Geist'
+  };
+
+  let cssVars = `\n  :root {\n`;
+  Object.entries(colors).forEach(([k, v]) => {
+    cssVars += `    --color-${k}: ${v};\n`;
+  });
+  Object.entries(fonts).forEach(([k, v]) => {
+    cssVars += `    --font-${k}: ${v}, sans-serif;\n`;
+  });
+  cssVars += `  }\n`;
+
+  // 3. Generate react pages
   Object.entries(pages).forEach(([pageId, rootNode]) => {
     const pageBindings = collectDataBindings(rootNode);
     const readBindings = pageBindings.filter(b => b.bindType === 'read');
@@ -356,18 +408,81 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       });
     }
 
-    // Generate Custom Script handlers
     const pageNodes = collectAllNodes(rootNode);
-    const pageScripts = pageNodes.filter(n => customScripts && customScripts[n.id]);
-    pageScripts.forEach(n => {
-      const scriptCode = customScripts[n.id];
-      submitHandlers += `  const handleCustom_${n.id.replace(/-/g, '_')} = () => {
-    try {
-      ${scriptCode}
-    } catch (err: any) {
-      console.error('Custom script error on ${n.id}:', err.message);
-    }
-  };\n\n`;
+
+    // Filter flows relevant to this page
+    const pageFlows = (logicFlows || []).filter(f =>
+      pageNodes.some(n => n.id === f.triggerNodeId || n.id === f.targetNodeId)
+    );
+
+    // Identify target elements of set-text and set-image to declare states
+    const setTextTargets = Array.from(new Set(pageFlows.filter(f => f.actionType === 'set-text' && f.targetNodeId).map(f => f.targetNodeId!)));
+    const setImageTargets = Array.from(new Set(pageFlows.filter(f => f.actionType === 'set-image' && f.targetNodeId).map(f => f.targetNodeId!)));
+
+    setTextTargets.forEach(targetId => {
+      const targetNode = pageNodes.find(n => n.id === targetId);
+      const defaultText = targetNode ? (targetNode.props.text || '') : '';
+      stateDecls += `  const [text_${targetId.replace(/-/g, '_')}, setText_${targetId.replace(/-/g, '_')}] = React.useState(${JSON.stringify(defaultText)});\n`;
+    });
+
+    setImageTargets.forEach(targetId => {
+      const targetNode = pageNodes.find(n => n.id === targetId);
+      const defaultUrl = targetNode ? (targetNode.props.imageUrl || '') : '';
+      stateDecls += `  const [image_${targetId.replace(/-/g, '_')}, setImage_${targetId.replace(/-/g, '_')}] = React.useState(${JSON.stringify(defaultUrl)});\n`;
+    });
+
+    // Generate event handlers for logicFlows & customScripts
+    let hasNavigateAction = false;
+
+    pageNodes.forEach(n => {
+      const nodeClickFlows = pageFlows.filter(f => f.triggerNodeId === n.id && f.triggerEvent === 'click');
+      const nodeHoverFlows = pageFlows.filter(f => f.triggerNodeId === n.id && f.triggerEvent === 'hover');
+      const hasScript = customScripts && customScripts[n.id];
+
+      if (nodeClickFlows.length > 0 || hasScript) {
+        let statements = '';
+        nodeClickFlows.forEach(flow => {
+          if (flow.actionType === 'set-text' && flow.targetNodeId) {
+            statements += `    setText_${flow.targetNodeId.replace(/-/g, '_')}(${JSON.stringify(flow.dataMapping || '')});\n`;
+          } else if (flow.actionType === 'set-image' && flow.targetNodeId) {
+            statements += `    setImage_${flow.targetNodeId.replace(/-/g, '_')}(${JSON.stringify(flow.dataMapping || '')});\n`;
+          } else if (flow.actionType === 'toast') {
+            statements += `    alert(${JSON.stringify(flow.dataMapping || '')});\n`;
+          } else if (flow.actionType === 'navigate') {
+            hasNavigateAction = true;
+            statements += `    router.push("/${flow.dataMapping === 'index' ? '' : flow.dataMapping}");\n`;
+          } else if (flow.actionType === 'custom-code' && flow.customCode) {
+            statements += `    try {\n      ${flow.customCode}\n    } catch (e) { console.error(e); }\n`;
+          } else if (flow.actionType === 'db-select' || flow.actionType === 'db-insert') {
+            statements += `    alert("Simulated database query/insert successfully!");\n`;
+          }
+        });
+        if (hasScript) {
+          statements += `    try {\n      ${customScripts[n.id]}\n    } catch (e) { console.error(e); }\n`;
+        }
+
+        submitHandlers += `  const handle_click_${n.id.replace(/-/g, '_')} = (e?: React.MouseEvent) => {\n    if (e) e.preventDefault();\n${statements}  };\n\n`;
+      }
+
+      if (nodeHoverFlows.length > 0) {
+        let statements = '';
+        nodeHoverFlows.forEach(flow => {
+          if (flow.actionType === 'set-text' && flow.targetNodeId) {
+            statements += `    setText_${flow.targetNodeId.replace(/-/g, '_')}(${JSON.stringify(flow.dataMapping || '')});\n`;
+          } else if (flow.actionType === 'set-image' && flow.targetNodeId) {
+            statements += `    setImage_${flow.targetNodeId.replace(/-/g, '_')}(${JSON.stringify(flow.dataMapping || '')});\n`;
+          } else if (flow.actionType === 'toast') {
+            statements += `    alert(${JSON.stringify(flow.dataMapping || '')});\n`;
+          } else if (flow.actionType === 'navigate') {
+            hasNavigateAction = true;
+            statements += `    router.push("/${flow.dataMapping === 'index' ? '' : flow.dataMapping}");\n`;
+          } else if (flow.actionType === 'custom-code' && flow.customCode) {
+            statements += `    try {\n      ${flow.customCode}\n    } catch (e) { console.error(e); }\n`;
+          }
+        });
+
+        submitHandlers += `  const handle_hover_${n.id.replace(/-/g, '_')} = () => {\n${statements}  };\n\n`;
+      }
     });
 
     const compileNode = (n: CanvasNode, depth: number = 0): string => {
@@ -397,38 +512,49 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         readValueExpression = `{${tableName}Data?.${n.props.dataBinding.columnName} || "${n.props.text || ''}"}`;
       }
 
-      // Check for custom script attachment
+      // Check for attached events
       let clickAttr = '';
+      const nodeClickFlows = pageFlows.filter(f => f.triggerNodeId === n.id && f.triggerEvent === 'click');
       const hasScript = customScripts && customScripts[n.id];
-      if (hasScript) {
-        clickAttr = ` onClick={handleCustom_${n.id.replace(/-/g, '_')}}`;
+      if (nodeClickFlows.length > 0 || hasScript) {
+        clickAttr = ` onClick={handle_click_${n.id.replace(/-/g, '_')}}`;
+      }
+
+      let hoverAttr = '';
+      const nodeHoverFlows = pageFlows.filter(f => f.triggerNodeId === n.id && f.triggerEvent === 'hover');
+      if (nodeHoverFlows.length > 0) {
+        hoverAttr = ` onMouseEnter={handle_hover_${n.id.replace(/-/g, '_')}}`;
       }
 
       if (n.type === 'Container') {
         if (n.children.length === 0) {
-          return `${indent}<div id="${n.id}"${classAttr}${styleAttr}${clickAttr} />`;
+          return `${indent}<div id="${n.id}"${classAttr}${styleAttr}${clickAttr}${hoverAttr} />`;
         }
         const childrenCode = n.children.map(c => compileNode(c, depth + 1)).join('\n');
-        return `${indent}<div id="${n.id}"${classAttr}${styleAttr}${clickAttr}>\n${childrenCode}\n${indent}</div>`;
+        return `${indent}<div id="${n.id}"${classAttr}${styleAttr}${clickAttr}${hoverAttr}>\n${childrenCode}\n${indent}</div>`;
       }
 
       if (n.type === 'TextBlock') {
         const Tag = n.props.tag || 'p';
-        const val = isReadBound ? readValueExpression : (n.props.text || '');
-        return `${indent}<${Tag} id="${n.id}"${classAttr}${styleAttr}${clickAttr}>${val}</${Tag}>`;
+        const val = setTextTargets.includes(n.id) 
+          ? `{text_${n.id.replace(/-/g, '_')}}` 
+          : (isReadBound ? readValueExpression : (n.props.text || ''));
+        return `${indent}<${Tag} id="${n.id}"${classAttr}${styleAttr}${clickAttr}${hoverAttr}>${val}</${Tag}>`;
       }
 
       if (n.type === 'Button') {
         const isWriteBound = hasDb && n.props.dataBinding && n.props.dataBinding.bindType === 'write';
-        if (!hasScript && isWriteBound && n.props.dataBinding) {
+        if (nodeClickFlows.length === 0 && !hasScript && isWriteBound && n.props.dataBinding) {
           const tbl = dbTables.find(t => t.id === n.props.dataBinding?.tableId);
           const tableName = tbl ? tbl.name : 'data';
           const handlerName = `handle${tableName.charAt(0).toUpperCase()}${tableName.slice(1).toLowerCase()}Submit`;
           clickAttr = ` onClick={${handlerName}}`;
         }
 
-        const buttonText = isReadBound ? readValueExpression : (n.props.text || '');
-        const btnJsx = `<button id="${n.id}"${classAttr}${styleAttr}${clickAttr}>${buttonText}</button>`;
+        const buttonText = setTextTargets.includes(n.id) 
+          ? `{text_${n.id.replace(/-/g, '_')}}` 
+          : (isReadBound ? readValueExpression : (n.props.text || ''));
+        const btnJsx = `<button id="${n.id}"${classAttr}${styleAttr}${clickAttr}${hoverAttr}>${buttonText}</button>`;
         if (n.props.linkTo && n.props.linkTo !== '#') {
           let href = n.props.linkTo;
           if (pages[href]) {
@@ -440,22 +566,26 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
 
       if (n.type === 'ImageBlock') {
-        let srcAttr = `src="${n.props.imageUrl || ''}"`;
-        if (isReadBound && n.props.dataBinding) {
-          const tbl = dbTables.find(t => t.id === n.props.dataBinding?.tableId);
-          const tableName = tbl ? tbl.name.toLowerCase() : 'data';
-          srcAttr = `src={${tableName}Data?.${n.props.dataBinding.columnName} || "${n.props.imageUrl || ''}"}`;
-        }
-        return `${indent}<img id="${n.id}" ${srcAttr} alt="${n.props.imageAlt || ''}"${classAttr}${styleAttr}${clickAttr} />`;
+        let srcAttr = setImageTargets.includes(n.id)
+          ? `src={image_${n.id.replace(/-/g, '_')}}`
+          : (isReadBound && n.props.dataBinding
+              ? (()=>{
+                  const tbl = dbTables.find(t => t.id === n.props.dataBinding?.tableId);
+                  const tableName = tbl ? tbl.name.toLowerCase() : 'data';
+                  return `src={${tableName}Data?.${n.props.dataBinding.columnName} || "${n.props.imageUrl || ''}"}`;
+                })()
+              : `src="${n.props.imageUrl || ''}"`
+            );
+        return `${indent}<img id="${n.id}" ${srcAttr} alt="${n.props.imageAlt || ''}"${classAttr}${styleAttr}${clickAttr}${hoverAttr} />`;
       }
 
       if (n.type === 'Divider') {
-        return `${indent}<hr id="${n.id}"${classAttr}${styleAttr}${clickAttr} />`;
+        return `${indent}<hr id="${n.id}"${classAttr}${styleAttr}${clickAttr}${hoverAttr} />`;
       }
 
       if (n.type === 'Icon') {
         const IconComponent = n.props.iconName || 'Star';
-        return `${indent}<${IconComponent} id="${n.id}"${classAttr}${styleAttr}${clickAttr} />`;
+        return `${indent}<${IconComponent} id="${n.id}"${classAttr}${styleAttr}${clickAttr}${hoverAttr} />`;
       }
 
       return '';
@@ -470,15 +600,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const nodeString = JSON.stringify(rootNode);
     const hasLink = nodeString.includes('"linkTo"') && !nodeString.includes('"linkTo":"#"');
     const importLink = hasLink ? "import Link from 'next/link';\n" : "";
+    const importRouter = hasNavigateAction ? "import { useRouter } from 'next/router';\n" : "";
 
     result[`/pages/${pageId}.tsx`] = `import React from 'react';
-${importLink}${importIcons}${dbImports}
+${importLink}${importIcons}${importRouter}${dbImports}
 export default function ${pageId.charAt(0).toUpperCase() + pageId.slice(1)}Page() {
-${stateDecls}
+${hasNavigateAction ? '  const router = useRouter();\n' : ''}${stateDecls}
 ${fetchEffects}${submitHandlers}  return (
     <div className="w-full min-h-screen flex flex-col items-center justify-center bg-slate-900 overflow-x-hidden">
       {/* Global CSS styles for Canva animations and hover effects */}
-      <style dangerouslySetInnerHTML={{ __html: \`${CUSTOM_STYLE_BLOCK}\` }} />
+      <style dangerouslySetInnerHTML={{ __html: \`${cssVars}${CUSTOM_STYLE_BLOCK}\` }} />
 ${body}
     </div>
   );
@@ -519,12 +650,36 @@ export function generateHtmlCode(
   dbConfig: DatabaseConfig | null = null,
   dbTables: DatabaseTable[] = [],
   customScripts: Record<string, string> = {},
-  backendServices: any[] = []
+  backendServices: any[] = [],
+  themeTokens?: ThemeTokens,
+  logicFlows: LogicFlow[] = []
 ): Record<string, string> {
   const result: Record<string, string> = {};
 
   const hasDb = dbConfig !== null;
   const provider = dbConfig?.provider;
+
+  // 1. Generate CSS Variables block
+  const colors = themeTokens?.colors || {
+    primary: '#3b82f6',
+    secondary: '#10b981',
+    accent: '#8b5cf6',
+    background: '#0f172a',
+    text: '#f8fafc'
+  };
+  const fonts = themeTokens?.fonts || {
+    heading: 'Geist',
+    body: 'Geist'
+  };
+
+  let cssVars = `\n  :root {\n`;
+  Object.entries(colors).forEach(([k, v]) => {
+    cssVars += `    --color-${k}: ${v};\n`;
+  });
+  Object.entries(fonts).forEach(([k, v]) => {
+    cssVars += `    --font-${k}: ${v}, sans-serif;\n`;
+  });
+  cssVars += `  }\n`;
 
   Object.entries(pages).forEach(([pageId, rootNode]) => {
     const pageBindings = collectDataBindings(rootNode);
@@ -598,6 +753,7 @@ export function generateHtmlCode(
     const lucideScriptImport = hasIcons 
       ? '  <script src="https://unpkg.com/lucide@latest"></script>\n' 
       : '';
+
     const lucideScriptInit = hasIcons 
       ? '  <script>\n    lucide.createIcons();\n  </script>\n' 
       : '';
@@ -869,6 +1025,63 @@ ${scriptBindingsCode}    });
 `;
     }
 
+    // Generate Visual Logic Flows Event Listeners for HTML
+    let logicScriptCode = '';
+    const pageFlows = (logicFlows || []).filter(f =>
+      pageNodes.some(n => n.id === f.triggerNodeId || n.id === f.targetNodeId)
+    );
+
+    const flowsByEvent: Record<string, { triggerNodeId: string; triggerEvent: string; flows: LogicFlow[] }> = {};
+    pageFlows.forEach(flow => {
+      const key = `${flow.triggerNodeId}_${flow.triggerEvent}`;
+      if (!flowsByEvent[key]) {
+        flowsByEvent[key] = { triggerNodeId: flow.triggerNodeId, triggerEvent: flow.triggerEvent, flows: [] };
+      }
+      flowsByEvent[key].flows.push(flow);
+    });
+
+    Object.values(flowsByEvent).forEach(({ triggerNodeId, triggerEvent, flows }) => {
+      const domEvent = triggerEvent === 'hover' ? 'mouseenter' : triggerEvent;
+      let statements = '';
+      flows.forEach(flow => {
+        if (flow.actionType === 'set-text' && flow.targetNodeId) {
+          statements += `          const target_${flow.targetNodeId.replace(/-/g, '_')} = document.getElementById('${flow.targetNodeId}');\n`;
+          statements += `          if (target_${flow.targetNodeId.replace(/-/g, '_')}) target_${flow.targetNodeId.replace(/-/g, '_')}.innerText = ${JSON.stringify(flow.dataMapping || '')};\n`;
+        } else if (flow.actionType === 'set-image' && flow.targetNodeId) {
+          statements += `          const target_${flow.targetNodeId.replace(/-/g, '_')} = document.getElementById('${flow.targetNodeId}');\n`;
+          statements += `          if (target_${flow.targetNodeId.replace(/-/g, '_')}) target_${flow.targetNodeId.replace(/-/g, '_')}.src = ${JSON.stringify(flow.dataMapping || '')};\n`;
+        } else if (flow.actionType === 'toast') {
+          statements += `          alert(${JSON.stringify(flow.dataMapping || '')});\n`;
+        } else if (flow.actionType === 'navigate') {
+          statements += `          window.location.href = "${flow.dataMapping}.html";\n`;
+        } else if (flow.actionType === 'custom-code' && flow.customCode) {
+          statements += `          try {\n            ${flow.customCode}\n          } catch (e) { console.error(e); }\n`;
+        } else if (flow.actionType === 'db-select' || flow.actionType === 'db-insert') {
+          statements += `          alert("Simulated database query/insert successfully!");\n`;
+        }
+      });
+
+      logicScriptCode += `      const el_${triggerNodeId.replace(/-/g, '_')} = document.getElementById('${triggerNodeId}');\n`;
+      logicScriptCode += `      if (el_${triggerNodeId.replace(/-/g, '_')}) {\n`;
+      logicScriptCode += `        el_${triggerNodeId.replace(/-/g, '_')}.addEventListener('${domEvent}', (e) => {\n`;
+      if (domEvent === 'click') {
+        logicScriptCode += `          e.preventDefault();\n`;
+      }
+      logicScriptCode += `${statements}        });\n`;
+      logicScriptCode += `      }\n`;
+    });
+
+    let logicScriptTag = '';
+    if (logicScriptCode) {
+      logicScriptTag = `
+  <!-- Visual Logic Flows -->
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+${logicScriptCode}    });
+  </script>
+`;
+    }
+
     result[`/${pageId}.html`] = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -878,11 +1091,11 @@ ${scriptBindingsCode}    });
   <!-- Load Tailwind CSS Play CDN for instant local rendering -->
   <script src="https://cdn.tailwindcss.com"></script>
 ${lucideScriptImport}  <style>
-${CUSTOM_STYLE_BLOCK}  </style>
+${cssVars}${CUSTOM_STYLE_BLOCK}  </style>
 </head>
 <body class="bg-slate-900 text-white min-h-screen flex flex-col items-center justify-center m-0 overflow-x-hidden">
 ${body}
-${lucideScriptInit}${dbScriptTag}${customScriptTag}</body>
+${lucideScriptInit}${dbScriptTag}${customScriptTag}${logicScriptTag}</body>
 </html>
 `;
   });

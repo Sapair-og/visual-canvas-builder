@@ -19,7 +19,9 @@ interface CanvasNodeRendererProps {
 export default function CanvasNodeRenderer({ node, parent }: CanvasNodeRendererProps) {
   const { 
     selectedNodeId, 
+    selectedNodeIds,
     selectNode, 
+    toggleSelectNode,
     addNode, 
     moveNode, 
     updateNodeProps, 
@@ -31,7 +33,13 @@ export default function CanvasNodeRenderer({ node, parent }: CanvasNodeRendererP
     activeDragType,
     setActiveDragType,
     activeDragGrabOffset,
-    setActiveDragGrabOffset
+    setActiveDragGrabOffset,
+    themeTokens,
+    customScripts,
+    logicFlows,
+    changePage,
+    showToast,
+    dbTables
   } = useEditor();
   
   const [isDragOver, setIsDragOver] = useState(false);
@@ -49,18 +57,77 @@ export default function CanvasNodeRenderer({ node, parent }: CanvasNodeRendererP
     }
   }, [selectedNodeId, node.id]);
 
-  const isSelected = selectedNodeId === node.id;
+  const isSelected = selectedNodeIds.includes(node.id);
   const isVisible = node.props.visible !== false;
 
   if (!isVisible && isPreview) {
     return null;
   }
 
+  const executeNodeActions = (nodeId: string, eventType: 'click' | 'hover' | 'change' | 'submit') => {
+    const matchingFlows = (logicFlows || []).filter(
+      (flow) => flow.triggerNodeId === nodeId && flow.triggerEvent === eventType
+    );
+    
+    matchingFlows.forEach((flow) => {
+      if (flow.actionType === 'set-text' && flow.targetNodeId && flow.dataMapping) {
+        updateNodeProps(flow.targetNodeId, { text: flow.dataMapping });
+        showToast(`Text updated to "${flow.dataMapping}"`, 'success');
+      } else if (flow.actionType === 'set-image' && flow.targetNodeId && flow.dataMapping) {
+        updateNodeProps(flow.targetNodeId, { imageUrl: flow.dataMapping });
+        showToast('Image URL updated', 'success');
+      } else if (flow.actionType === 'toast' && flow.dataMapping) {
+        showToast(flow.dataMapping, 'info');
+      } else if (flow.actionType === 'navigate' && flow.dataMapping) {
+        changePage(flow.dataMapping);
+      } else if (flow.actionType === 'custom-code' && flow.customCode) {
+        try {
+          const fn = new Function('updateNodeProps', 'showToast', 'changePage', flow.customCode);
+          fn(updateNodeProps, showToast, changePage);
+        } catch (err: any) {
+          showToast(`Custom script error: ${err.message}`, 'error');
+        }
+      } else if (flow.actionType === 'db-select' || flow.actionType === 'db-insert') {
+        showToast(`Simulated database ${flow.actionType === 'db-select' ? 'query' : 'write'} on table "${flow.dbTable}" successfully!`, 'success');
+      }
+    });
+
+    if (eventType === 'click' && customScripts && customScripts[nodeId]) {
+      try {
+        const fn = new Function('updateNodeProps', 'showToast', 'changePage', customScripts[nodeId]);
+        fn(updateNodeProps, showToast, changePage);
+      } catch (err: any) {
+        showToast(`Custom script error: ${err.message}`, 'error');
+      }
+    }
+  };
+
+  const handleMouseEnter = () => {
+    if (isPreview) {
+      executeNodeActions(node.id, 'hover');
+    }
+  };
+
   // Click handler to select this node in the editor properties sidebar
   const handleClick = (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    selectNode(node.id);
+    if (isPreview) {
+      e.preventDefault();
+      e.stopPropagation();
+      executeNodeActions(node.id, 'click');
+      if (node.type === 'Button' && node.props.dataBinding?.bindType === 'write') {
+        const tblId = node.props.dataBinding.tableId;
+        const tbl = (dbTables || []).find(t => t.id === tblId);
+        showToast(`Form data submitted to database table "${tbl ? tbl.name : 'data'}" successfully!`, 'success');
+      }
+    } else {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.shiftKey) {
+        toggleSelectNode(node.id);
+      } else {
+        selectNode(node.id);
+      }
+    }
   };
 
   // Drag-and-drop event handlers
@@ -398,6 +465,25 @@ export default function CanvasNodeRenderer({ node, parent }: CanvasNodeRendererP
 
     const layerNo = node.props.layerNo !== undefined ? Number(node.props.layerNo) : 1;
 
+    const resolveColor = (colorVal?: string) => {
+      if (!colorVal) return undefined;
+      if (colorVal.startsWith('theme-')) {
+        const tokenKey = colorVal.replace('theme-', '');
+        return themeTokens.colors[tokenKey] || colorVal;
+      }
+      if (colorVal === 'primary' || colorVal === 'secondary' || colorVal === 'accent' || colorVal === 'background' || colorVal === 'text') {
+        return themeTokens.colors[colorVal];
+      }
+      return colorVal;
+    };
+
+    const resolveFont = (fontVal?: string, isHeading = false) => {
+      if (!fontVal || fontVal === 'default') {
+        return isHeading ? themeTokens.fonts.heading : themeTokens.fonts.body;
+      }
+      return fontVal;
+    };
+
     return {
       position: node.id === 'root' ? 'relative' : (s.position || 'absolute'),
       left: s.left,
@@ -420,13 +506,13 @@ export default function CanvasNodeRenderer({ node, parent }: CanvasNodeRendererP
       marginBottom: s.marginBottom,
       marginLeft: s.marginLeft,
 
-      backgroundColor: s.backgroundColor,
+      backgroundColor: resolveColor(s.backgroundColor),
       backgroundImage: bgImg,
       backgroundSize: s.backgroundImage ? 'cover' : undefined,
       backgroundPosition: s.backgroundImage ? 'center' : undefined,
-      color: s.textColor,
+      color: resolveColor(s.textColor),
       borderRadius: s.borderRadius,
-      borderColor: s.borderColor,
+      borderColor: resolveColor(s.borderColor),
       borderWidth: s.borderWidth ? `${s.borderWidth}px` : undefined,
       borderStyle: s.borderStyle || (s.borderWidth ? 'solid' : undefined),
 
@@ -441,6 +527,7 @@ export default function CanvasNodeRenderer({ node, parent }: CanvasNodeRendererP
       fontSize: s.fontSize,
       fontWeight: s.fontWeight,
       fontStyle: s.fontStyle,
+      fontFamily: resolveFont(s.fontFamily, node.type === 'TextBlock' && (node.props.tag || 'p') !== 'p'),
     } as React.CSSProperties;
   };
 
@@ -478,6 +565,7 @@ export default function CanvasNodeRenderer({ node, parent }: CanvasNodeRendererP
           <div
             id={node.id}
             onClick={handleClick}
+            onMouseEnter={handleMouseEnter}
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
@@ -575,6 +663,9 @@ export default function CanvasNodeRenderer({ node, parent }: CanvasNodeRendererP
         if (isPreview) {
           return (
             <Tag
+              id={node.id}
+              onClick={handleClick}
+              onMouseEnter={handleMouseEnter}
               style={inlineStyles}
               className={`${editorOutlineClass} ${node.props.className || ''}`}
             >
@@ -586,6 +677,7 @@ export default function CanvasNodeRenderer({ node, parent }: CanvasNodeRendererP
           <div
             id={node.id}
             onClick={handleClick}
+            onMouseEnter={handleMouseEnter}
             onDoubleClick={() => setIsEditing(true)}
             draggable={!isPreview && !isSelected}
             onDragStart={handleDragStart}
@@ -651,7 +743,9 @@ export default function CanvasNodeRenderer({ node, parent }: CanvasNodeRendererP
         if (isPreview) {
           return (
             <button
+              id={node.id}
               onClick={handleClick}
+              onMouseEnter={handleMouseEnter}
               style={inlineStyles}
               className={`${editorOutlineClass} ${node.props.className || ''}`}
             >
@@ -663,6 +757,7 @@ export default function CanvasNodeRenderer({ node, parent }: CanvasNodeRendererP
           <div
             id={node.id}
             onClick={handleClick}
+            onMouseEnter={handleMouseEnter}
             onDoubleClick={() => setIsEditing(true)}
             draggable={!isPreview && !isSelected}
             onDragStart={handleDragStart}
@@ -707,6 +802,7 @@ export default function CanvasNodeRenderer({ node, parent }: CanvasNodeRendererP
           <div
             id={node.id}
             onClick={handleClick}
+            onMouseEnter={handleMouseEnter}
             draggable={!isPreview && !isSelected}
             onDragStart={handleDragStart}
             onDragEnd={handleDragEnd}
@@ -738,6 +834,7 @@ export default function CanvasNodeRenderer({ node, parent }: CanvasNodeRendererP
           <div
             id={node.id}
             onClick={handleClick}
+            onMouseEnter={handleMouseEnter}
             draggable={!isPreview && !isSelected}
             onDragStart={handleDragStart}
             onDragEnd={handleDragEnd}
@@ -765,6 +862,7 @@ export default function CanvasNodeRenderer({ node, parent }: CanvasNodeRendererP
           <div
             id={node.id}
             onClick={handleClick}
+            onMouseEnter={handleMouseEnter}
             draggable={!isPreview && !isSelected}
             onDragStart={handleDragStart}
             onDragEnd={handleDragEnd}

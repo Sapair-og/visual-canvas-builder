@@ -88,7 +88,9 @@ export default function SidebarLeft() {
     project, 
     canvasState, 
     selectedNodeId, 
+    selectedNodeIds,
     selectNode, 
+    toggleSelectNode,
     deleteNode, 
     addTemplate,
     renameNode,
@@ -106,12 +108,29 @@ export default function SidebarLeft() {
     pasteNode,
     clipboard,
     setActiveDragType,
-    setActiveDragGrabOffset
+    setActiveDragGrabOffset,
+    themeTokens,
+    updateThemeToken
   } = useEditor();
 
-  const [activeTab, setActiveTab] = useState<'components' | 'layers' | 'templates' | 'media' | 'database'>('components');
+  const [activeTab, setActiveTab] = useState<'components' | 'layers' | 'templates' | 'media' | 'database' | 'theme'>('components');
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState<string>('');
+  const [photoSearchQuery, setPhotoSearchQuery] = useState('');
+  const [searchedPhotos, setSearchedPhotos] = useState(STOCK_PHOTOS);
+
+  const handlePhotoSearch = (query: string) => {
+    setPhotoSearchQuery(query);
+    if (!query.trim()) {
+      setSearchedPhotos(STOCK_PHOTOS);
+      return;
+    }
+    const results = Array.from({ length: 6 }, (_, i) => ({
+      name: `${query.charAt(0).toUpperCase() + query.slice(1)} ${i + 1}`,
+      url: `https://images.unsplash.com/featured/300x200/?${encodeURIComponent(query.trim())}&sig=${i}`
+    }));
+    setSearchedPhotos(results);
+  };
 
   const [selectedProvider, setSelectedProvider] = useState<'supabase' | 'mongodb' | 'firebase'>('supabase');
   const [supabaseUrl, setSupabaseUrl] = useState('');
@@ -230,7 +249,7 @@ export default function SidebarLeft() {
   };
 
   const renderLayerItem = (node: CanvasNode, depth = 0): React.ReactNode => {
-    const isSelected = selectedNodeId === node.id;
+    const isSelected = selectedNodeIds.includes(node.id);
     const isRoot = node.id === 'root';
     const isVisible = node.props.visible !== false;
     const isLocked = !!node.props.locked;
@@ -248,7 +267,13 @@ export default function SidebarLeft() {
     return (
       <div key={node.id} className="space-y-0.5">
         <div 
-          onClick={() => selectNode(node.id)}
+          onClick={(e) => {
+            if (e.shiftKey) {
+              toggleSelectNode(node.id);
+            } else {
+              selectNode(node.id);
+            }
+          }}
           className={`group/layer flex items-center gap-1.5 py-1 px-2 rounded-lg cursor-pointer transition-all border ${
             isSelected 
               ? 'bg-blue-600/10 border-blue-500/25 text-blue-400 font-medium' 
@@ -422,6 +447,7 @@ export default function SidebarLeft() {
               { id: 'templates', label: 'Layouts', icon: LayoutGrid },
               { id: 'media', label: 'Media', icon: ImageIcon },
               { id: 'database', label: 'Database', icon: Database },
+              { id: 'theme', label: 'Theme', icon: Sparkles }
             ].map((tab) => {
               const Icon = tab.icon;
               const isActive = activeTab === tab.id && !leftSidebarCollapsed;
@@ -610,12 +636,24 @@ export default function SidebarLeft() {
                     )}
 
                     {/* Stock Photos Grid */}
-                    <div className="space-y-2">
-                      <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Stock Images</h3>
-                      <div className="grid grid-cols-2 gap-2">
-                        {STOCK_PHOTOS.map((ph) => (
+                    <div className="space-y-2.5">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Stock Images</h3>
+                        <span className="text-[8px] text-slate-550 font-bold font-mono">Live Search</span>
+                      </div>
+                      
+                      <input
+                        type="text"
+                        placeholder="Search stock photos (e.g. tech, nature)..."
+                        value={photoSearchQuery}
+                        onChange={(e) => handlePhotoSearch(e.target.value)}
+                        className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-900 rounded-lg text-[11px] text-slate-200 focus:outline-none focus:border-blue-500 font-sans"
+                      />
+
+                      <div className="grid grid-cols-2 gap-2 max-h-[180px] overflow-y-auto pr-1">
+                        {searchedPhotos.map((ph, idx) => (
                           <button
-                            key={ph.name}
+                            key={`${ph.name}-${idx}`}
                             onClick={() => applyPreset('photo', ph.url)}
                             className="group relative h-14 rounded-lg overflow-hidden border border-slate-800 hover:border-white transition-all cursor-pointer"
                             title={ph.name}
@@ -779,6 +817,86 @@ export default function SidebarLeft() {
                       )}
                     </div>
                   )}
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'theme' && (
+              <div className="p-4 space-y-5">
+                <div>
+                  <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-400 font-sans">
+                    Design Tokens
+                  </h2>
+                  <p className="text-[10px] text-slate-500 mt-0.5 font-sans">
+                    Customize global color palettes and typography scales.
+                  </p>
+                </div>
+
+                <div className="space-y-4">
+                  {/* Colors Section */}
+                  <div className="space-y-2.5">
+                    <h3 className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Theme Colors</h3>
+                    
+                    <div className="space-y-3 bg-slate-900/30 border border-slate-900 p-3 rounded-xl">
+                      {[
+                        { key: 'primary', label: 'Primary Brand' },
+                        { key: 'secondary', label: 'Secondary Accent' },
+                        { key: 'accent', label: 'Focal Highlight' },
+                        { key: 'background', label: 'App Backdrop' },
+                        { key: 'text', label: 'App Text' },
+                      ].map((col) => (
+                        <div key={col.key} className="flex items-center justify-between text-xs text-slate-300">
+                          <span className="font-semibold">{col.label}</span>
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-[10px] text-slate-550 uppercase">{themeTokens.colors[col.key]}</span>
+                            <input
+                              type="color"
+                              value={themeTokens.colors[col.key] || '#ffffff'}
+                              onChange={(e) => updateThemeToken('colors', col.key, e.target.value)}
+                              className="w-6 h-6 rounded cursor-pointer border border-slate-850 bg-transparent shrink-0"
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Fonts Section */}
+                  <div className="space-y-2.5">
+                    <h3 className="text-[9px] font-bold text-slate-550 uppercase tracking-wider font-sans">Theme Typography</h3>
+                    
+                    <div className="space-y-3 bg-slate-900/30 border border-slate-900 p-3 rounded-xl text-xs text-slate-350">
+                      <div className="space-y-1">
+                        <label className="text-[9px] text-slate-500 font-bold uppercase">Heading Font Family</label>
+                        <select
+                          value={themeTokens.fonts.heading}
+                          onChange={(e) => updateThemeToken('fonts', 'heading', e.target.value)}
+                          className="w-full px-2 py-1 bg-slate-950 border border-slate-900 rounded-lg text-xs text-white focus:outline-none"
+                        >
+                          <option value="Geist">Geist (Modern Sans)</option>
+                          <option value="Outfit">Outfit (Geometric)</option>
+                          <option value="Playfair Display">Playfair Display (Elegant Serif)</option>
+                          <option value="Inter">Inter (Workhorse Sans)</option>
+                          <option value="monospace">Courier Mono (Coding)</option>
+                        </select>
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-[9px] text-slate-500 font-bold uppercase">Body Font Family</label>
+                        <select
+                          value={themeTokens.fonts.body}
+                          onChange={(e) => updateThemeToken('fonts', 'body', e.target.value)}
+                          className="w-full px-2 py-1 bg-slate-950 border border-slate-900 rounded-lg text-xs text-white focus:outline-none"
+                        >
+                          <option value="Geist">Geist (Modern Sans)</option>
+                          <option value="Outfit">Outfit (Geometric)</option>
+                          <option value="Playfair Display">Playfair Display (Elegant Serif)</option>
+                          <option value="Inter">Inter (Workhorse Sans)</option>
+                          <option value="monospace">Courier Mono (Coding)</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
             )}

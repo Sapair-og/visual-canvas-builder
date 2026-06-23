@@ -1,7 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { CanvasNode, ProjectState, NodeType, ComponentProps, ComponentStyles } from '../types/canvas';
+import { CanvasNode, ProjectState, NodeType, ComponentProps, ComponentStyles, ThemeTokens, LogicFlow } from '../types/canvas';
 import { db } from '../lib/db';
 import { DatabaseConfig, DatabaseTable, DataBinding } from '../types/database';
 import { LayoutTemplate } from '../lib/templates';
@@ -16,11 +16,14 @@ interface EditorContextType {
   project: ProjectState | null;
   canvasState: CanvasNode | null;
   selectedNodeId: string | null;
+  selectedNodeIds: string[];
   loading: boolean;
   snapToGrid: boolean;
   canUndo: boolean;
   canRedo: boolean;
   selectNode: (id: string | null) => void;
+  toggleSelectNode: (id: string) => void;
+  selectMultipleNodes: (ids: string[]) => void;
   updateNodeProps: (nodeId: string, props: Partial<ComponentProps>) => void;
   addNode: (targetId: string, type: NodeType, props?: ComponentProps, position?: { x: number; y: number }) => void;
   deleteNode: (nodeId: string) => void;
@@ -78,6 +81,12 @@ interface EditorContextType {
   setActiveDragType: (type: NodeType | null) => void;
   activeDragGrabOffset: { x: number; y: number } | null;
   setActiveDragGrabOffset: (offset: { x: number; y: number } | null) => void;
+  themeTokens: ThemeTokens;
+  updateThemeToken: (category: 'colors' | 'fonts', key: string, value: string) => void;
+  logicFlows: LogicFlow[];
+  addLogicFlow: (flow: Omit<LogicFlow, 'id'>) => void;
+  deleteLogicFlow: (flowId: string) => void;
+  groupSelectedNodes: () => void;
 }
 
 export interface EditorGuide {
@@ -273,7 +282,22 @@ export const EditorProvider = ({ children }: { children: ReactNode }) => {
   });
   const [currentPageId, setCurrentPageId] = useState<string>('index');
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
+  const [themeTokens, setThemeTokens] = useState<ThemeTokens>({
+    colors: {
+      primary: '#3b82f6',
+      secondary: '#10b981',
+      accent: '#8b5cf6',
+      background: '#0f172a',
+      text: '#f8fafc'
+    },
+    fonts: {
+      heading: 'Geist',
+      body: 'Geist'
+    }
+  });
+  const [logicFlows, setLogicFlows] = useState<LogicFlow[]>([]);
 
   // Database Flow & Binding States
   const [workspaceMode, setWorkspaceMode] = useState<'design' | 'data-flow' | 'scripting' | 'backend'>('design');
@@ -372,6 +396,20 @@ export const EditorProvider = ({ children }: { children: ReactNode }) => {
         { id: 'db-sync', name: 'Real-time Database Sync', enabled: false, config: { mode: 'auto' } },
         { id: 'smtp', name: 'Email Notifications (SMTP)', enabled: false, config: { host: 'smtp.mailgun.org', port: '587' } },
       ]);
+      setThemeTokens(loaded.themeTokens || {
+        colors: {
+          primary: '#3b82f6',
+          secondary: '#10b981',
+          accent: '#8b5cf6',
+          background: '#0f172a',
+          text: '#f8fafc'
+        },
+        fonts: {
+          heading: 'Geist',
+          body: 'Geist'
+        }
+      });
+      setLogicFlows(loaded.logicFlows || []);
       setWorkspaceMode('design');
       setLeftSidebarCollapsed(false);
       setRightSidebarCollapsed(false);
@@ -412,6 +450,7 @@ export const EditorProvider = ({ children }: { children: ReactNode }) => {
     setCanvasState(previous);
     setPastStates(remainingPast);
     setSelectedNodeId(null); // Clear selection outline to prevent mismatch
+    setSelectedNodeIds([]);
     showToast('Undo action applied', 'info');
   };
 
@@ -425,11 +464,148 @@ export const EditorProvider = ({ children }: { children: ReactNode }) => {
     setCanvasState(next);
     setFutureStates(remainingFuture);
     setSelectedNodeId(null);
+    setSelectedNodeIds([]);
     showToast('Redo action applied', 'info');
   };
 
   const selectNode = (id: string | null) => {
     setSelectedNodeId(id);
+    setSelectedNodeIds(id ? [id] : []);
+  };
+
+  const toggleSelectNode = (id: string) => {
+    setSelectedNodeIds(prev => {
+      const next = prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id];
+      setSelectedNodeId(next[0] || null);
+      return next;
+    });
+  };
+
+  const selectMultipleNodes = (ids: string[]) => {
+    setSelectedNodeIds(ids);
+    setSelectedNodeId(ids[0] || null);
+  };
+
+  const updateThemeToken = (category: 'colors' | 'fonts', key: string, value: string) => {
+    setThemeTokens(prev => ({
+      ...prev,
+      [category]: {
+        ...prev[category],
+        [key]: value
+      }
+    }));
+    showToast(`Theme ${category} token updated: ${key}`, 'success');
+  };
+
+  const addLogicFlow = (flow: Omit<LogicFlow, 'id'>) => {
+    const id = `flow-${Math.random().toString(36).substring(2, 9)}`;
+    const newFlow = { ...flow, id } as LogicFlow;
+    setLogicFlows(prev => [...prev, newFlow]);
+    showToast('Visual logic flow connected!', 'success');
+  };
+
+  const deleteLogicFlow = (flowId: string) => {
+    setLogicFlows(prev => prev.filter(f => f.id !== flowId));
+    showToast('Logic connection removed', 'info');
+  };
+
+  const groupSelectedNodes = () => {
+    if (!canvasState || selectedNodeIds.length <= 1) return;
+
+    const nodeCoords: { id: string; left: number; top: number; width: number; height: number; node: CanvasNode }[] = [];
+    
+    const findNodes = (root: CanvasNode) => {
+      for (const child of root.children) {
+        if (selectedNodeIds.includes(child.id)) {
+          const style = child.props.style || {};
+          const left = parsePixelVal(style.left, 0);
+          const top = parsePixelVal(style.top, 0);
+          const width = parsePixelVal(style.width, 180);
+          const height = parsePixelVal(style.height, 40);
+          nodeCoords.push({ id: child.id, left, top, width, height, node: child });
+        }
+        findNodes(child);
+      }
+    };
+    
+    findNodes(canvasState);
+
+    if (nodeCoords.length === 0) return;
+
+    const lefts = nodeCoords.map(n => n.left);
+    const tops = nodeCoords.map(n => n.top);
+    const rights = nodeCoords.map(n => n.left + n.width);
+    const bottoms = nodeCoords.map(n => n.top + n.height);
+
+    const minLeft = Math.min(...lefts);
+    const minTop = Math.min(...tops);
+    const maxRight = Math.max(...rights);
+    const maxBottom = Math.max(...bottoms);
+
+    const groupWidth = maxRight - minLeft;
+    const groupHeight = maxBottom - minTop;
+
+    const groupNodeId = `container-${Math.random().toString(36).substring(2, 9)}`;
+    const groupNode: CanvasNode = {
+      id: groupNodeId,
+      type: 'Container',
+      props: {
+        layerName: 'Group Container',
+        style: {
+          position: 'absolute',
+          left: `${minLeft}px`,
+          top: `${minTop}px`,
+          width: `${groupWidth}px`,
+          height: `${groupHeight}px`,
+          display: 'flex',
+          flexDirection: 'column',
+          backgroundColor: 'transparent',
+          paddingTop: '0px',
+          paddingRight: '0px',
+          paddingBottom: '0px',
+          paddingLeft: '0px',
+          gap: '0px'
+        }
+      },
+      children: nodeCoords.map(n => {
+        const childStyle = { ...(n.node.props.style || {}) };
+        childStyle.left = `${n.left - minLeft}px`;
+        childStyle.top = `${n.top - minTop}px`;
+        return {
+          ...n.node,
+          props: {
+            ...n.node.props,
+            style: childStyle
+          }
+        };
+      })
+    };
+
+    let parentId = 'root';
+    const findParent = (root: CanvasNode): string | null => {
+      for (const child of root.children) {
+        if (child.id === selectedNodeIds[0]) {
+          return root.id;
+        }
+        const found = findParent(child);
+        if (found) return found;
+      }
+      return null;
+    };
+    const resolvedParentId = findParent(canvasState) || 'root';
+
+    setCanvasStateWithHistory(prev => {
+      if (!prev) return null;
+      let nextTree = prev;
+      for (const id of selectedNodeIds) {
+        nextTree = deleteNodeFromTree(nextTree, id);
+      }
+      nextTree = addNodeToTree(nextTree, resolvedParentId, groupNode);
+      return nextTree;
+    });
+
+    selectNode(groupNodeId);
+    showToast('Grouped selected elements', 'success');
   };
 
   const updateNodeProps = (nodeId: string, props: Partial<ComponentProps>) => {
@@ -572,13 +748,24 @@ export const EditorProvider = ({ children }: { children: ReactNode }) => {
 
   const deleteNode = (nodeId: string) => {
     if (!canvasState || nodeId === 'root') return;
+    const targets = selectedNodeIds.includes(nodeId) ? selectedNodeIds : [nodeId];
+
     setCanvasStateWithHistory(prev => {
       if (!prev) return null;
-      return deleteNodeFromTree(prev, nodeId);
+      let nextTree = prev;
+      for (const targetId of targets) {
+        if (targetId !== 'root') {
+          nextTree = deleteNodeFromTree(nextTree, targetId);
+        }
+      }
+      return nextTree;
     });
-    // Cascade delete any data bindings associated with this canvas node
-    setDbBindings(prev => prev.filter(b => b.nodeId !== nodeId));
-    if (selectedNodeId === nodeId) {
+
+    setDbBindings(prev => prev.filter(b => !targets.includes(b.nodeId)));
+    setLogicFlows(prev => prev.filter(f => !targets.includes(f.triggerNodeId) && (!f.targetNodeId || !targets.includes(f.targetNodeId))));
+
+    setSelectedNodeIds(prev => prev.filter(id => !targets.includes(id)));
+    if (targets.includes(selectedNodeId || '')) {
       setSelectedNodeId(null);
     }
   };
@@ -675,6 +862,8 @@ export const EditorProvider = ({ children }: { children: ReactNode }) => {
       dbBindings: dbBindings || undefined,
       customScripts: customScripts || undefined,
       backendServices: backendServices || undefined,
+      themeTokens: themeTokens || undefined,
+      logicFlows: logicFlows || undefined,
       updatedAt: new Date().toISOString()
     };
     db.saveProject(updatedProject);
@@ -1101,7 +1290,16 @@ export const EditorProvider = ({ children }: { children: ReactNode }) => {
         activeDragType,
         setActiveDragType,
         activeDragGrabOffset,
-        setActiveDragGrabOffset
+        setActiveDragGrabOffset,
+        selectedNodeIds,
+        toggleSelectNode,
+        selectMultipleNodes,
+        themeTokens,
+        updateThemeToken,
+        logicFlows,
+        addLogicFlow,
+        deleteLogicFlow,
+        groupSelectedNodes
       }}
     >
       {children}

@@ -6,7 +6,7 @@ import CanvasNodeRenderer from './CanvasNodeRenderer';
 import { 
   Eye, Save, Code, Laptop, Smartphone, Tablet, Grid, AlertTriangle, CheckCircle, Info, X, 
   Database, Sliders, Terminal, Server, ChevronLeft, ChevronRight, Lock, Unlock, 
-  ChevronsUp, ChevronsDown, Trash2, Copy, Scissors, ArrowUp, ArrowDown
+  ChevronsUp, ChevronsDown, Trash2, Copy, Scissors, ArrowUp, ArrowDown, Layers
 } from 'lucide-react';
 import ExportModal from './ExportModal';
 import DatabaseSchemaEditor from './DatabaseSchemaEditor';
@@ -19,6 +19,7 @@ export default function Canvas() {
     saveProject, 
     project, 
     selectedNodeId, 
+    selectedNodeIds,
     deleteNode, 
     snapToGrid, 
     setSnapToGrid, 
@@ -33,6 +34,7 @@ export default function Canvas() {
     setIsPreview,
     addNode,
     selectNode,
+    selectMultipleNodes,
     pages,
     currentPageId,
     changePage,
@@ -51,13 +53,74 @@ export default function Canvas() {
     clipboard,
     toggleNodeLock,
     reorderNode,
-    alignNode
+    alignNode,
+    groupSelectedNodes
   } = useEditor();
   
   const [viewport, setViewport] = useState<'desktop' | 'tablet' | 'mobile'>('desktop');
   const [isExportOpen, setIsExportOpen] = useState(false);
   const [zoom, setZoom] = useState<number>(100);
   const [showCheatsheet, setShowCheatsheet] = useState(false);
+  const [marquee, setMarquee] = useState<{ startX: number; startY: number; endX: number; endY: number; active: boolean }>({
+    startX: 0,
+    startY: 0,
+    endX: 0,
+    endY: 0,
+    active: false
+  });
+
+  const handleWorkspaceMouseDown = (e: React.MouseEvent) => {
+    if (e.target !== e.currentTarget) return;
+    setMarquee({
+      startX: e.clientX,
+      startY: e.clientY,
+      endX: e.clientX,
+      endY: e.clientY,
+      active: true
+    });
+  };
+
+  const handleWorkspaceMouseMove = (e: React.MouseEvent) => {
+    if (!marquee.active) return;
+    setMarquee(prev => {
+      const next = { ...prev, endX: e.clientX, endY: e.clientY };
+      const rectX = Math.min(next.startX, next.endX);
+      const rectY = Math.min(next.startY, next.endY);
+      const rectW = Math.abs(next.startX - next.endX);
+      const rectH = Math.abs(next.startY - next.endY);
+
+      const nodesInside: string[] = [];
+      const checkNode = (node: any) => {
+        if (!node) return;
+        if (node.id !== 'root') {
+          const el = document.getElementById(node.id);
+          if (el) {
+            const elRect = el.getBoundingClientRect();
+            const overlaps = !(
+              elRect.right < rectX ||
+              elRect.left > rectX + rectW ||
+              elRect.bottom < rectY ||
+              elRect.top > rectY + rectH
+            );
+            if (overlaps) {
+              nodesInside.push(node.id);
+            }
+          }
+        }
+        if (node.children) {
+          node.children.forEach(checkNode);
+        }
+      };
+
+      checkNode(canvasState);
+      selectMultipleNodes(nodesInside);
+      return next;
+    });
+  };
+
+  const handleWorkspaceMouseUp = () => {
+    setMarquee(prev => ({ ...prev, active: false }));
+  };
 
   // Helper to find selected node in the canvas tree
   const findNodeById = (root: any, id: string): any => {
@@ -147,6 +210,12 @@ export default function Canvas() {
         pasteNode(selectedNodeId);
       }
 
+      // Group shortcut (Ctrl + G)
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'g') {
+        e.preventDefault();
+        groupSelectedNodes();
+      }
+
       // Photoshop tool shortcuts
       if (e.key.toLowerCase() === 'v') {
         selectNode(null);
@@ -175,7 +244,7 @@ export default function Canvas() {
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [selectedNodeId, deleteNode, undo, redo, addNode, selectNode, copyNode, cutNode, pasteNode]);
+  }, [selectedNodeId, selectedNodeIds, deleteNode, undo, redo, addNode, selectNode, copyNode, cutNode, pasteNode, groupSelectedNodes]);
 
   if (!canvasState) {
     return (
@@ -857,6 +926,18 @@ export default function Canvas() {
 
               <div className="h-4 w-px bg-slate-900 mx-1" />
 
+              {/* Group Layers */}
+              {selectedNodeIds.length > 1 && (
+                <button
+                  onClick={groupSelectedNodes}
+                  className="p-1.5 bg-blue-600/10 border border-blue-500/30 text-blue-400 hover:bg-blue-600 hover:text-white rounded-lg transition-all cursor-pointer font-bold text-[10px] flex items-center gap-1 shrink-0"
+                  title="Group Selected Layers (Ctrl+G)"
+                >
+                  <Layers className="w-3.5 h-3.5" />
+                  <span>Group</span>
+                </button>
+              )}
+
               {/* Delete */}
               <button
                 onClick={() => deleteNode(selectedNode.id)}
@@ -878,7 +959,27 @@ export default function Canvas() {
       ) : workspaceMode === 'backend' ? (
         <BackendDeployer />
       ) : (
-        <div className="flex-1 overflow-auto p-8 pb-32 flex items-start justify-center bg-slate-950 bg-[radial-gradient(#1e293b_1px,transparent_1px)] [background-size:16px_16px] relative">
+        <div 
+          onMouseDown={handleWorkspaceMouseDown}
+          onMouseMove={handleWorkspaceMouseMove}
+          onMouseUp={handleWorkspaceMouseUp}
+          className="flex-1 overflow-auto p-8 pb-32 flex items-start justify-center bg-slate-950 bg-[radial-gradient(#1e293b_1px,transparent_1px)] [background-size:16px_16px] relative select-none"
+        >
+          {marquee.active && (
+            <div
+              style={{
+                position: 'fixed',
+                left: Math.min(marquee.startX, marquee.endX),
+                top: Math.min(marquee.startY, marquee.endY),
+                width: Math.abs(marquee.startX - marquee.endX),
+                height: Math.abs(marquee.startY - marquee.endY),
+                backgroundColor: 'rgba(59, 130, 246, 0.15)',
+                border: '1px solid rgba(59, 130, 246, 0.45)',
+                pointerEvents: 'none',
+                zIndex: 1000
+              }}
+            />
+          )}
         <div 
           className={`w-full ${getViewportWidth()} bg-white dark:bg-slate-950 rounded-2xl shadow-[0_24px_70px_rgba(0,0,0,0.55)] border border-slate-800/60 relative pl-6 pt-6 overflow-hidden ${!isPreview ? 'ring-1 ring-blue-500/20 shadow-[0_0_50px_-10px_rgba(59,130,246,0.15)]' : ''}`}
           style={{

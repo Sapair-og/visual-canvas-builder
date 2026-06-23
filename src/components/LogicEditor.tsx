@@ -1,333 +1,425 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useEditor } from '../context/EditorContext';
-import { CanvasNode } from '../types/canvas';
-import { Terminal, Code, Settings, Save, Play, BookOpen, Layers, Check } from 'lucide-react';
-
-interface ScriptTemplate {
-  name: string;
-  description: string;
-  code: string;
-}
-
-const TEMPLATES: Record<string, ScriptTemplate> = {
-  ecommerce: {
-    name: '🛒 E-Commerce Cart Logic',
-    description: 'Binds product button click to add items to a local storage cart state and updates cart badge count.',
-    code: `// E-Commerce Add-to-Cart Script
-// Triggered on button click to update shopping cart count
-const currentCartCount = parseInt(localStorage.getItem('cart_count') || '0');
-const newCount = currentCartCount + 1;
-localStorage.setItem('cart_count', newCount.toString());
-
-// Update cart counter display element (make sure to set this ID on a text element)
-const counterElement = document.getElementById('textblock-cart-counter');
-if (counterElement) {
-  counterElement.innerText = \`🛒 Cart (\${newCount})\`;
-}
-
-// Display visual alert toast
-alert('Product added to shopping cart! Cart count updated successfully.');
-`
-  },
-  netflix: {
-    name: '▶ Netflix Video Player',
-    description: 'Toggle simulated media trailer streams, overlay play filters, and update button states.',
-    code: `// Netflix Media Player Controller
-// Toggle trailer streaming status on cover frame
-const videoEl = document.getElementById('imageblock-movie-player');
-const playBtn = document.getElementById('button-play-trailer');
-
-if (videoEl) {
-  const isPlaying = videoEl.getAttribute('data-playing') === 'true';
-  if (!isPlaying) {
-    videoEl.setAttribute('data-playing', 'true');
-    videoEl.style.opacity = '1';
-    videoEl.style.filter = 'brightness(1.15)';
-    if (playBtn) playBtn.innerText = '⏸ Pause Trailer';
-    console.log('Simulating Netflix trailer stream: PLAYING');
-  } else {
-    videoEl.setAttribute('data-playing', 'false');
-    videoEl.style.opacity = '0.8';
-    videoEl.style.filter = 'none';
-    if (playBtn) playBtn.innerText = '▶ Play Trailer';
-    console.log('Simulating Netflix trailer stream: PAUSED');
-  }
-}
-`
-  },
-  spotify: {
-    name: '🟢 Spotify Audio Player',
-    description: 'Stream music, update active artist/track titles, and toggle spotify green active states.',
-    code: `// Spotify Audio Player Controls
-// Binds audio source playback status
-const spotifyTrack = {
-  title: "Blinding Lights",
-  artist: "The Weeknd"
-};
-
-const artistLabel = document.getElementById('textblock-spotify-artist');
-const titleLabel = document.getElementById('textblock-spotify-title');
-const playBtn = document.getElementById('button-spotify-play');
-
-if (titleLabel && artistLabel) {
-  titleLabel.innerText = spotifyTrack.title;
-  artistLabel.innerText = spotifyTrack.artist;
-}
-
-if (playBtn) {
-  const isPlaying = playBtn.getAttribute('data-active') === 'true';
-  if (!isPlaying) {
-    playBtn.setAttribute('data-active', 'true');
-    playBtn.innerText = '🟢 Playing (Blinding Lights)';
-    playBtn.style.backgroundColor = '#1ed760'; // Spotify Green
-    alert(\`Now streaming: \${spotifyTrack.title} by \${spotifyTrack.artist}\`);
-  } else {
-    playBtn.setAttribute('data-active', 'false');
-    playBtn.innerText = '▶ Stream Track';
-    playBtn.style.backgroundColor = '#1e293b';
-  }
-}
-`
-  },
-  calculator: {
-    name: '🧮 Pricing Calculator',
-    description: 'Collect numeric parameters dynamically, apply bulk discounts, and calculate pricing aggregates.',
-    code: `// Custom Pricing Calculator
-// Dynamically calculates totals based on selected quantity
-const quantity = 3; // quantity variable
-const basePrice = 29.99; // price per license
-const discount = quantity > 5 ? 0.9 : 1.0; // 10% off for bulk buy
-
-const totalCost = (quantity * basePrice * discount).toFixed(2);
-
-const costDisplay = document.getElementById('textblock-total-price');
-if (costDisplay) {
-  costDisplay.innerText = \`Total Cost: $\${totalCost} (\${quantity} licenses)\`;
-  costDisplay.style.color = '#3b82f6';
-}
-console.log('Calculated Pricing:', totalCost);
-`
-  },
-  contact: {
-    name: '✉️ Recruiter Contact Form',
-    description: 'Simulates secure SMTP email dispatches when users hit contact/portfolio request buttons.',
-    code: `// Secure Recruiter Form submit logic
-const recruiterEmail = "hire-me@developers.com";
-console.log(\`Provisioning visual email gateway to dispatcher: \${recruiterEmail}\`);
-
-// Simulate AJAX backend endpoint send
-setTimeout(() => {
-  alert('Secure message successfully dispatched to developer portfolio mailbox!');
-}, 500);
-`
-  }
-};
+import { CanvasNode, LogicFlow } from '../types/canvas';
+import { Terminal, Code, Layers, Database, ArrowRight, Trash2, Plus, Sparkles, Link2, Play, Check } from 'lucide-react';
 
 export default function LogicEditor() {
-  const { canvasState, customScripts, updateCustomScript } = useEditor();
-  const [selectedNodeId, setSelectedNodeId] = useState<string>('');
-  const [activeCode, setActiveCode] = useState<string>('');
-  const [activeTemplate, setActiveTemplate] = useState<string>('');
-  const [runSuccess, setRunSuccess] = useState(false);
+  const { 
+    canvasState, 
+    dbTables, 
+    pages, 
+    logicFlows, 
+    addLogicFlow, 
+    deleteLogicFlow,
+    showToast
+  } = useEditor();
 
-  // Flatten nodes recursively to build elements directory list
+  // Local creation form states
+  const [triggerNodeId, setTriggerNodeId] = useState('');
+  const [triggerEvent, setTriggerEvent] = useState<'click' | 'hover' | 'change' | 'submit'>('click');
+  const [actionType, setActionType] = useState<'db-select' | 'db-insert' | 'set-text' | 'set-image' | 'toast' | 'navigate' | 'custom-code'>('set-text');
+  
+  const [targetNodeId, setTargetNodeId] = useState('');
+  const [targetTextVal, setTargetTextVal] = useState('');
+  const [dbTable, setDbTable] = useState('');
+  const [customCode, setCustomCode] = useState('');
+  const [routePath, setRoutePath] = useState('index');
+
+  const [testRunId, setTestRunId] = useState<string | null>(null);
+
+  // Flatten nodes recursively to list elements in dropdowns
   const getFlattenedNodes = (node: CanvasNode | null): CanvasNode[] => {
     if (!node) return [];
     const list = [node];
     node.children.forEach(c => {
       list.push(...getFlattenedNodes(c));
     });
-    return list.filter(n => n.id !== 'root'); // Hide root node from scripting list
+    return list.filter(n => n.id !== 'root'); // Hide root node
   };
 
   const elements = getFlattenedNodes(canvasState);
 
-  // Sync active code when selected node changes
-  useEffect(() => {
-    if (selectedNodeId) {
-      setActiveCode(customScripts[selectedNodeId] || '');
-      setActiveTemplate('');
-    } else if (elements.length > 0) {
-      setSelectedNodeId(elements[0].id);
+  const handleCreateFlow = () => {
+    if (!triggerNodeId) {
+      alert('Please select a trigger source element.');
+      return;
     }
-  }, [selectedNodeId, customScripts]);
 
-  const handleApplyTemplate = (key: string) => {
-    const tpl = TEMPLATES[key];
-    if (tpl) {
-      setActiveTemplate(key);
-      setActiveCode(tpl.code);
+    let dataMapping = '';
+    if (actionType === 'set-text' || actionType === 'set-image' || actionType === 'toast') {
+      dataMapping = targetTextVal;
+    } else if (actionType === 'navigate') {
+      dataMapping = routePath;
     }
+
+    addLogicFlow({
+      triggerNodeId,
+      triggerEvent,
+      actionType,
+      targetNodeId: (actionType === 'set-text' || actionType === 'set-image') ? targetNodeId : undefined,
+      targetProperty: (actionType === 'set-text') ? 'text' : (actionType === 'set-image') ? 'imageUrl' : undefined,
+      dbTable: (actionType === 'db-select' || actionType === 'db-insert') ? dbTable : undefined,
+      dbAction: (actionType === 'db-select') ? 'select' : (actionType === 'db-insert') ? 'insert' : undefined,
+      customCode: (actionType === 'custom-code') ? customCode : undefined,
+      dataMapping
+    });
+
+    // Reset form
+    setTriggerNodeId('');
+    setTargetNodeId('');
+    setTargetTextVal('');
+    setCustomCode('');
   };
 
-  const handleSave = () => {
-    if (!selectedNodeId) return;
-    updateCustomScript(selectedNodeId, activeCode);
-  };
-
-  const handleTestScript = () => {
-    try {
-      const runFn = new Function(activeCode);
-      runFn();
-      setRunSuccess(true);
-      setTimeout(() => setRunSuccess(false), 2000);
-    } catch (err: any) {
-      alert('JavaScript Script Syntax Error: ' + err.message);
-    }
+  const simulateFlow = (flowId: string) => {
+    setTestRunId(flowId);
+    setTimeout(() => {
+      setTestRunId(null);
+      showToast('Visual Script simulation finished!', 'success');
+    }, 1500);
   };
 
   return (
     <div className="flex-1 bg-slate-955 flex select-none text-slate-200 min-h-0 overflow-hidden">
-      
-      {/* Left panel: Elements Directory list */}
-      <div className="w-64 border-r border-slate-900 bg-slate-950 flex flex-col h-full shrink-0">
+      {/* 1. Left sidebar: Configure connections */}
+      <div className="w-80 border-r border-slate-900 bg-slate-950 flex flex-col h-full shrink-0 overflow-y-auto">
         <div className="p-4 border-b border-slate-900 bg-slate-955/40">
-          <h2 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5 font-sans">
-            <Layers className="w-3.5 h-3.5 text-blue-450" />
-            <span>Select Script Target</span>
+          <h2 className="text-xs font-bold text-slate-350 uppercase tracking-wider flex items-center gap-1.5 font-sans">
+            <Link2 className="w-3.5 h-3.5 text-blue-450" />
+            <span>Connect Visual Logic</span>
           </h2>
-          <p className="text-[10px] text-slate-500 mt-0.5 font-sans">Choose which design element to attach scripting logic to.</p>
+          <p className="text-[10px] text-slate-500 mt-0.5 font-sans">Wire user events to actions and database inputs.</p>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-2.5 space-y-1">
-          {elements.length === 0 ? (
-            <div className="p-4 text-center text-slate-600 text-[11px] italic font-sans">
-              No canvas elements available to script. Add TextBlocks, Containers, or Buttons first.
+        <div className="p-4 space-y-4 text-xs font-sans text-slate-300">
+          {/* Step 1: Trigger Setup */}
+          <div className="space-y-2 bg-slate-900/30 border border-slate-900 p-3 rounded-xl">
+            <div className="text-[10px] font-bold text-blue-400 uppercase tracking-wider">⚡ 1. Choose Event Trigger</div>
+            
+            <div className="space-y-2">
+              <div>
+                <label className="block text-[9px] font-bold text-slate-500 uppercase mb-1">Source Element</label>
+                <select
+                  value={triggerNodeId}
+                  onChange={(e) => setTriggerNodeId(e.target.value)}
+                  className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-900 rounded-lg text-xs text-white focus:outline-none"
+                >
+                  <option value="">-- Choose Element --</option>
+                  {elements.map(el => (
+                    <option key={el.id} value={el.id}>{el.props.layerName || `${el.type} (${el.id})`}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[9px] font-bold text-slate-500 uppercase mb-1">Event Action</label>
+                <select
+                  value={triggerEvent}
+                  onChange={(e) => setTriggerEvent(e.target.value as any)}
+                  className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-900 rounded-lg text-xs text-white focus:outline-none"
+                >
+                  <option value="click">On Click (Triggered on click)</option>
+                  <option value="hover">On Hover (Mouse over)</option>
+                  <option value="change">On Input Change (Value changed)</option>
+                  <option value="submit">On Form Submit</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {/* Step 2: Action Setup */}
+          <div className="space-y-3 bg-slate-900/30 border border-slate-900 p-3 rounded-xl">
+            <div className="text-[10px] font-bold text-purple-400 uppercase tracking-wider">⚙ 2. Choose Response Action</div>
+            
+            <div>
+              <label className="block text-[9px] font-bold text-slate-500 uppercase mb-1">Action Type</label>
+              <select
+                value={actionType}
+                onChange={(e) => setActionType(e.target.value as any)}
+                className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-900 rounded-lg text-xs text-white focus:outline-none"
+              >
+                <option value="set-text">Update Text Content</option>
+                <option value="set-image">Update Image URL</option>
+                <option value="db-select">Query Database Table</option>
+                <option value="db-insert">Write Row to Database</option>
+                <option value="toast">Display Popup Notification</option>
+                <option value="navigate">Navigate to Page</option>
+                <option value="custom-code">Execute Custom Javascript</option>
+              </select>
+            </div>
+
+            {/* Dynamic settings based on selected action type */}
+            {actionType === 'set-text' && (
+              <div className="space-y-2 pt-1 border-t border-slate-900">
+                <div>
+                  <label className="block text-[9px] font-bold text-slate-500 uppercase mb-1">Target Element</label>
+                  <select
+                    value={targetNodeId}
+                    onChange={(e) => setTargetNodeId(e.target.value)}
+                    className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-900 rounded-lg text-xs text-white focus:outline-none"
+                  >
+                    <option value="">-- Choose Text Block --</option>
+                    {elements.filter(el => el.type === 'TextBlock' || el.type === 'Button').map(el => (
+                      <option key={el.id} value={el.id}>{el.props.layerName || `${el.type} (${el.id})`}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[9px] font-bold text-slate-500 uppercase mb-1">Text Value</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Added to cart!"
+                    value={targetTextVal}
+                    onChange={(e) => setTargetTextVal(e.target.value)}
+                    className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-900 rounded-lg text-xs text-white focus:outline-none"
+                  />
+                </div>
+              </div>
+            )}
+
+            {actionType === 'set-image' && (
+              <div className="space-y-2 pt-1 border-t border-slate-900">
+                <div>
+                  <label className="block text-[9px] font-bold text-slate-500 uppercase mb-1">Target Image block</label>
+                  <select
+                    value={targetNodeId}
+                    onChange={(e) => setTargetNodeId(e.target.value)}
+                    className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-900 rounded-lg text-xs text-white focus:outline-none"
+                  >
+                    <option value="">-- Choose Image --</option>
+                    {elements.filter(el => el.type === 'ImageBlock').map(el => (
+                      <option key={el.id} value={el.id}>{el.props.layerName || `${el.type} (${el.id})`}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[9px] font-bold text-slate-500 uppercase mb-1">Image URL</label>
+                  <input
+                    type="text"
+                    placeholder="https://images.unsplash.com/..."
+                    value={targetTextVal}
+                    onChange={(e) => setTargetTextVal(e.target.value)}
+                    className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-900 rounded-lg text-xs text-white focus:outline-none"
+                  />
+                </div>
+              </div>
+            )}
+
+            {(actionType === 'db-select' || actionType === 'db-insert') && (
+              <div className="space-y-2 pt-1 border-t border-slate-900">
+                <div>
+                  <label className="block text-[9px] font-bold text-slate-500 uppercase mb-1">Database Table</label>
+                  <select
+                    value={dbTable}
+                    onChange={(e) => setDbTable(e.target.value)}
+                    className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-900 rounded-lg text-xs text-white focus:outline-none"
+                  >
+                    <option value="">-- Choose Table --</option>
+                    {dbTables.map(t => (
+                      <option key={t.id} value={t.name}>{t.name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            )}
+
+            {actionType === 'toast' && (
+              <div className="space-y-2 pt-1 border-t border-slate-900">
+                <div>
+                  <label className="block text-[9px] font-bold text-slate-500 uppercase mb-1">Popup Alert Message</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Recruiter message sent!"
+                    value={targetTextVal}
+                    onChange={(e) => setTargetTextVal(e.target.value)}
+                    className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-900 rounded-lg text-xs text-white focus:outline-none"
+                  />
+                </div>
+              </div>
+            )}
+
+            {actionType === 'navigate' && (
+              <div className="space-y-2 pt-1 border-t border-slate-900">
+                <div>
+                  <label className="block text-[9px] font-bold text-slate-500 uppercase mb-1">Go to Route File</label>
+                  <select
+                    value={routePath}
+                    onChange={(e) => setRoutePath(e.target.value)}
+                    className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-900 rounded-lg text-xs text-white focus:outline-none"
+                  >
+                    {Object.keys(pages).map(pId => (
+                      <option key={pId} value={pId}>/{pId}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            )}
+
+            {actionType === 'custom-code' && (
+              <div className="space-y-2 pt-1 border-t border-slate-900">
+                <div>
+                  <label className="block text-[9px] font-bold text-slate-500 uppercase mb-1 font-mono">Custom Javascript</label>
+                  <textarea
+                    placeholder="// Write script runs here...&#10;console.log('Script loaded!');"
+                    value={customCode}
+                    onChange={(e) => setCustomCode(e.target.value)}
+                    className="w-full h-24 px-2 py-1.5 bg-slate-950 border border-slate-900 rounded-lg text-[10px] text-slate-300 font-mono focus:outline-none resize-none"
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Connect Button */}
+          <button
+            onClick={handleCreateFlow}
+            disabled={!triggerNodeId}
+            className="w-full flex items-center justify-center gap-1.5 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-650 hover:from-blue-500 hover:to-indigo-550 text-white font-bold text-xs rounded-xl shadow transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed border border-blue-500/10"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Attach Logic Flow</span>
+          </button>
+        </div>
+      </div>
+
+      {/* 2. Right Panel: Interactive Node Canvas flowchart */}
+      <div className="flex-1 bg-slate-950 p-6 flex flex-col h-full overflow-y-auto select-none">
+        <div className="flex items-center justify-between pb-4 border-b border-slate-900 shrink-0">
+          <div>
+            <h2 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5 font-sans">
+              <Terminal className="w-3.5 h-3.5 text-blue-450 animate-pulse" />
+              <span>Logic flowchart board</span>
+            </h2>
+            <p className="text-[10px] text-slate-550 font-sans mt-0.5">Visualize interactive links and custom actions mapping.</p>
+          </div>
+          <span className="text-[9px] bg-slate-900 border border-slate-800 text-slate-400 font-mono px-2 py-0.5 rounded-full">
+            {logicFlows.length} flows active
+          </span>
+        </div>
+
+        {/* List flows */}
+        <div className="flex-1 py-8 space-y-12">
+          {logicFlows.length === 0 ? (
+            <div className="h-full flex flex-col items-center justify-center text-center p-6 bg-slate-950/20 rounded-2xl border border-dashed border-slate-900 font-sans max-w-lg mx-auto mt-12">
+              <div className="w-12 h-12 rounded-full bg-slate-900/60 border border-slate-850 flex items-center justify-center mb-4 text-slate-500">
+                <Sparkles className="w-5 h-5" />
+              </div>
+              <h3 className="text-xs font-bold text-slate-400">No Logic Flows Created</h3>
+              <p className="text-[10px] text-slate-650 mt-1 leading-relaxed">
+                Connect canvas elements to event-actions on the left sidebar to visualize flowchart connections.
+              </p>
             </div>
           ) : (
-            elements.map(el => {
-              const hasScript = !!customScripts[el.id];
-              const isSelected = selectedNodeId === el.id;
+            logicFlows.map((flow) => {
+              const triggerName = elements.find(el => el.id === flow.triggerNodeId)?.props.layerName || flow.triggerNodeId;
+              const targetName = flow.targetNodeId ? (elements.find(el => el.id === flow.targetNodeId)?.props.layerName || flow.targetNodeId) : '';
+              const isTesting = testRunId === flow.id;
+              
               return (
-                <button
-                  key={el.id}
-                  onClick={() => setSelectedNodeId(el.id)}
-                  className={`w-full flex items-center justify-between p-2 rounded-lg text-left text-xs transition-all border ${
-                    isSelected
-                      ? 'bg-slate-900 border-slate-800 text-white font-medium font-sans'
-                      : 'hover:bg-slate-900 border-transparent text-slate-400 hover:text-slate-250 font-sans'
-                  }`}
-                >
-                  <div className="flex items-center gap-2 truncate">
-                    <Code className={`w-3.5 h-3.5 ${isSelected ? 'text-blue-400' : 'text-slate-500'}`} />
-                    <span className="truncate font-mono text-[11px]">{el.props.layerName || el.id}</span>
+                <div key={flow.id} className="relative flex items-center justify-center max-w-3xl mx-auto group">
+                  {/* Trigger Card (Left) */}
+                  <div className="w-72 bg-slate-900/50 border border-blue-500/20 p-4 rounded-xl shadow-lg relative flex flex-col gap-1.5 shrink-0 z-10 hover:border-blue-500/40 transition-all">
+                    <div className="absolute top-[-8px] left-3 bg-blue-600 text-white font-mono text-[8px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider">
+                      Trigger Event
+                    </div>
+                    <div className="text-[10px] text-slate-500 font-mono font-bold">ELEMENT: <span className="text-white">{triggerName}</span></div>
+                    <div className="text-[11px] text-blue-400 font-bold flex items-center gap-1">
+                      <span>⚡ On {flow.triggerEvent}</span>
+                    </div>
                   </div>
-                  {hasScript && (
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-sm shadow-emerald-500/50" title="Script attached" />
-                  )}
-                </button>
+
+                  {/* SVG Connection track */}
+                  <div className="flex-1 h-8 relative select-none shrink-0 pointer-events-none">
+                    <svg className="w-full h-full absolute inset-0 overflow-visible" style={{ zIndex: 1 }}>
+                      <defs>
+                        <marker id="arrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                          <path d="M 0 2 L 10 5 L 0 8 z" fill="#3b82f6" />
+                        </marker>
+                      </defs>
+                      <line 
+                        x1="0" 
+                        y1="16" 
+                        x2="100%" 
+                        y2="16" 
+                        stroke={isTesting ? "#10b981" : "#1e293b"} 
+                        strokeWidth={isTesting ? "3" : "2"} 
+                        strokeDasharray={isTesting ? "none" : "4 4"}
+                        className={isTesting ? "animate-pulse" : ""}
+                        markerEnd="url(#arrow)" 
+                      />
+                    </svg>
+                    
+                    {/* Delete button positioned absolute in the center of connection line */}
+                    <div className="absolute inset-0 flex items-center justify-center z-15 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="flex gap-1">
+                        <button
+                          onClick={() => simulateFlow(flow.id)}
+                          className="p-1 bg-slate-900 hover:bg-slate-800 text-[9px] font-bold text-emerald-450 hover:text-emerald-400 border border-slate-800 rounded-md shadow cursor-pointer transition-all"
+                          title="Simulate Event connection"
+                        >
+                          Simulate
+                        </button>
+                        <button
+                          onClick={() => deleteLogicFlow(flow.id)}
+                          className="p-1 bg-slate-900 hover:bg-red-950 hover:text-red-400 text-red-500 border border-slate-800 rounded-md shadow cursor-pointer transition-all"
+                          title="Delete connection"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Action Card (Right) */}
+                  <div className={`w-72 border p-4 rounded-xl shadow-lg relative flex flex-col gap-1.5 shrink-0 z-10 transition-all ${
+                    isTesting
+                      ? 'bg-emerald-950/20 border-emerald-500/40 shadow-[0_0_15px_rgba(16,185,129,0.2)]'
+                      : 'bg-slate-900/50 border-purple-500/20 hover:border-purple-500/40'
+                  }`}>
+                    <div className="absolute top-[-8px] left-3 bg-purple-600 text-white font-mono text-[8px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider">
+                      Response Action
+                    </div>
+                    <div className="text-[10px] text-slate-500 font-mono font-bold">TYPE: <span className="text-white uppercase font-sans">{flow.actionType}</span></div>
+                    
+                    <div className="text-[11px] text-purple-400 font-bold flex items-center gap-1">
+                      <span>⚙ </span>
+                      {flow.actionType === 'set-text' && (
+                        <span>Set text of <span className="text-white">{targetName}</span> to <span className="text-white">"{flow.dataMapping}"</span></span>
+                      )}
+                      {flow.actionType === 'set-image' && (
+                        <span>Set image URL of <span className="text-white">{targetName}</span> to <span className="text-white truncate max-w-[120px]" title={flow.dataMapping}>"{flow.dataMapping}"</span></span>
+                      )}
+                      {flow.actionType === 'db-select' && (
+                        <span className="text-pink-400">Query & fetch list from table <span className="text-white">"{flow.dbTable}"</span></span>
+                      )}
+                      {flow.actionType === 'db-insert' && (
+                        <span className="text-pink-400">Submit form data into table <span className="text-white">"{flow.dbTable}"</span></span>
+                      )}
+                      {flow.actionType === 'toast' && (
+                        <span>Show toast popup: <span className="text-white">"{flow.dataMapping}"</span></span>
+                      )}
+                      {flow.actionType === 'navigate' && (
+                        <span>Go to page route: <span className="text-white">/{flow.dataMapping}</span></span>
+                      )}
+                      {flow.actionType === 'custom-code' && (
+                        <span>Run custom javascript script snippet</span>
+                      )}
+                    </div>
+                    
+                    {flow.actionType === 'custom-code' && flow.customCode && (
+                      <pre className="mt-1 bg-slate-950 p-2 rounded text-[8px] font-mono text-slate-400 overflow-x-auto max-h-[50px]">
+                        {flow.customCode}
+                      </pre>
+                    )}
+                  </div>
+                </div>
               );
             })
           )}
         </div>
       </div>
-
-      {/* Center panel: Code Scripting Workspace */}
-      <div className="flex-1 flex flex-col h-full min-w-0 bg-slate-950">
-        {selectedNodeId ? (
-          <>
-            {/* Header */}
-            <div className="p-4 border-b border-slate-900 bg-slate-950/40 flex items-center justify-between shrink-0 font-sans">
-              <div>
-                <span className="text-[9px] font-mono text-blue-455 uppercase tracking-widest font-bold">Script Attached to:</span>
-                <h3 className="text-xs font-bold text-white font-mono">{selectedNodeId}</h3>
-              </div>
-
-              {/* Action buttons */}
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={handleTestScript}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 border border-slate-800 hover:bg-slate-800 text-slate-300 text-[10px] font-bold rounded-lg transition-all cursor-pointer"
-                  title="Run code simulation on this page"
-                >
-                  {runSuccess ? (
-                    <>
-                      <Check className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
-                      <span className="text-emerald-400">Simulation Executed!</span>
-                    </>
-                  ) : (
-                    <>
-                      <Play className="w-3.5 h-3.5 text-emerald-400" />
-                      <span>Simulate Script</span>
-                    </>
-                  )}
-                </button>
-
-                <button
-                  onClick={handleSave}
-                  className="flex items-center gap-1.5 px-3.5 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-bold rounded-lg shadow-md transition-all cursor-pointer"
-                >
-                  <Save className="w-3.5 h-3.5" />
-                  <span>Attach Logic Script</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Presets and templates list bar */}
-            <div className="px-6 py-2.5 bg-slate-900/40 border-b border-slate-900 flex items-center gap-2.5 overflow-x-auto text-[10px] shrink-0 font-sans">
-              <span className="text-slate-500 font-bold uppercase tracking-wider text-[9px] flex items-center gap-1">
-                <BookOpen className="w-3.5 h-3.5 text-slate-500" />
-                <span>Script Presets:</span>
-              </span>
-              {Object.entries(TEMPLATES).map(([key, tpl]) => (
-                <button
-                  key={key}
-                  onClick={() => handleApplyTemplate(key)}
-                  className={`px-2.5 py-1 rounded transition-all border font-bold ${
-                    activeTemplate === key
-                      ? 'bg-slate-800 text-emerald-450 border-slate-705 font-semibold'
-                      : 'text-slate-400 border-slate-850 hover:border-slate-700 bg-slate-950/40 hover:text-slate-200'
-                  }`}
-                >
-                  {tpl.name}
-                </button>
-              ))}
-            </div>
-
-            {/* Code editor pane */}
-            <div className="flex-1 flex min-h-0 relative">
-              {/* Preset Description Banner */}
-              {activeTemplate && TEMPLATES[activeTemplate] && (
-                <div className="absolute top-4 left-4 right-4 z-10 bg-slate-900/90 border border-slate-800/80 p-3 rounded-lg text-[10px] text-slate-450 max-w-xl shadow-lg backdrop-blur font-sans">
-                  <strong className="text-white block mb-0.5">Preset: {TEMPLATES[activeTemplate].name}</strong>
-                  {TEMPLATES[activeTemplate].description}
-                </div>
-              )}
-
-              {/* Textarea dark code block */}
-              <div className="flex-1 flex overflow-hidden font-mono text-xs select-text relative">
-                {/* Simulated Line numbers column */}
-                <div className="w-10 bg-slate-955/80 border-r border-slate-900 text-right pr-2 py-4 select-none text-[10px] text-slate-600 leading-relaxed font-mono shrink-0">
-                  {Array.from({ length: 25 }, (_, i) => i + 1).map(n => (
-                    <div key={n} className="h-5">{n}</div>
-                  ))}
-                </div>
-                
-                <textarea
-                  value={activeCode}
-                  onChange={(e) => setActiveCode(e.target.value)}
-                  placeholder="// Attach Unity-style scripts to expand component features...&#10;// Write custom JavaScript logic directly here.&#10;// Example:&#10;// const el = document.getElementById('textblock-id');&#10;// if (el) el.innerText = 'Hello visual scripting!';"
-                  className="flex-1 bg-transparent p-4 py-4 focus:outline-none text-slate-300 placeholder-slate-650 resize-none font-mono text-[11px] leading-relaxed border-none h-full"
-                  spellCheck="false"
-                />
-              </div>
-            </div>
-          </>
-        ) : (
-          <div className="flex-1 flex flex-col items-center justify-center p-6 text-center select-none bg-slate-950 font-sans">
-            <div className="w-12 h-12 rounded-full bg-slate-900/80 border border-slate-800 flex items-center justify-center mb-4 text-slate-500">
-              <Terminal className="w-5 h-5 animate-pulse" />
-            </div>
-            <h3 className="text-xs font-bold text-slate-350">No Script Target Selected</h3>
-            <p className="text-[10px] text-slate-550 max-w-xs mt-1 leading-relaxed">
-              Select any elements on the left outline lists to attach custom scripts or load visual presets.
-            </p>
-          </div>
-        )}
-      </div>
-
     </div>
   );
 }

@@ -4,6 +4,16 @@ import React, { useState, useEffect } from 'react';
 import { useEditor } from '../context/EditorContext';
 import { Trash2, Settings, HelpCircle, Sliders, Type, Link2, Lock, LockOpen, Sparkles, Copy, Scissors, Clipboard, Layers } from 'lucide-react';
 import { CanvasNode, ComponentStyles } from '../types/canvas';
+import * as LucideIcons from 'lucide-react';
+
+const LUCIDE_ICONS_LIST = [
+  'Star', 'Heart', 'Sparkles', 'Mail', 'Lock', 'Settings', 'Home', 'User', 'Phone', 'Menu', 
+  'Search', 'Trash', 'Check', 'AlertTriangle', 'Info', 'Laptop', 'Smartphone', 'Tablet', 
+  'Grid', 'Sliders', 'Terminal', 'Server', 'Layers', 'Database', 'ArrowUp', 'ArrowDown', 
+  'ChevronLeft', 'ChevronRight', 'Copy', 'Scissors', 'Clipboard', 'Eye', 'EyeOff', 'Play', 
+  'Pause', 'Plus', 'X', 'Camera', 'MapPin', 'ShoppingBag', 'CreditCard', 
+  'HelpCircle', 'Globe', 'Compass', 'Download', 'Upload', 'Share2', 'Calendar', 'Briefcase'
+];
 
 export default function SidebarRight() {
   const { 
@@ -20,7 +30,8 @@ export default function SidebarRight() {
     copyNode,
     cutNode,
     pasteNode,
-    clipboard
+    clipboard,
+    themeTokens
   } = useEditor();
 
   if (rightSidebarCollapsed) return null;
@@ -28,6 +39,7 @@ export default function SidebarRight() {
   const [selectedTableId, setSelectedTableId] = useState<string>('');
   const [selectedColName, setSelectedColName] = useState<string>('');
   const [selectedBindType, setSelectedBindType] = useState<'read' | 'write'>('read');
+  const [iconSearchQuery, setIconSearchQuery] = useState('');
 
   // Reset dropdown selections when node selection changes
   useEffect(() => {
@@ -445,27 +457,37 @@ export default function SidebarRight() {
 
           {/* Icon attributes (Icon) */}
           {selectedNode.type === 'Icon' && (
-            <div>
-              <label className="block text-[10px] font-semibold text-slate-500 mb-1">
-                Icon Selector
+            <div className="space-y-2.5">
+              <label className="block text-[10px] font-semibold text-slate-500">
+                Search & Choose Icon
               </label>
-              <select
-                value={selectedNode.props.iconName || 'Star'}
-                onChange={(e) => handlePropChange('iconName', e.target.value)}
-                className="w-full px-2 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-slate-200 text-xs focus:outline-none focus:border-blue-500"
-              >
-                <option value="Star">Star ⭐</option>
-                <option value="Heart">Heart ❤️</option>
-                <option value="Sparkles">Sparkles ✨</option>
-                <option value="Search">Search 🔍</option>
-                <option value="Mail">Mail ✉️</option>
-                <option value="Lock">Lock 🔒</option>
-                <option value="Settings">Settings ⚙️</option>
-                <option value="Home">Home 🏠</option>
-                <option value="User">User 👤</option>
-                <option value="Phone">Phone 📞</option>
-                <option value="Menu">Menu ☰</option>
-              </select>
+              <input
+                type="text"
+                placeholder="Search icons (e.g. star, mail)..."
+                value={iconSearchQuery}
+                onChange={(e) => setIconSearchQuery(e.target.value)}
+                className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-slate-200 text-xs focus:outline-none focus:border-blue-500 font-sans"
+              />
+              <div className="grid grid-cols-5 gap-1 bg-slate-950 border border-slate-900 rounded-xl p-1.5 max-h-[140px] overflow-y-auto">
+                {LUCIDE_ICONS_LIST.filter(icon => icon.toLowerCase().includes(iconSearchQuery.toLowerCase())).map((iconName) => {
+                  const LucideIcon = (LucideIcons as any)[iconName] || LucideIcons.HelpCircle;
+                  return (
+                    <button
+                      key={iconName}
+                      type="button"
+                      onClick={() => handlePropChange('iconName', iconName)}
+                      className={`p-1.5 flex items-center justify-center rounded-lg border transition-all hover:scale-105 hover:bg-slate-900 cursor-pointer ${
+                        selectedNode.props.iconName === iconName
+                          ? 'bg-blue-600/10 border-blue-500/40 text-blue-400 font-medium'
+                          : 'border-transparent text-slate-400 hover:text-white'
+                      }`}
+                      title={iconName}
+                    >
+                      <LucideIcon className="w-3.5 h-3.5" />
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           )}
         </section>
@@ -496,11 +518,24 @@ export default function SidebarRight() {
               />
               <input
                 type="text"
-                placeholder="#hex or transparent"
+                placeholder="#hex or theme color"
                 value={styles.backgroundColor || ''}
                 onChange={(e) => handleStyleChange('backgroundColor', e.target.value)}
                 className="flex-1 px-3 py-1 bg-slate-900 border border-slate-800 rounded-lg text-slate-250 text-xs focus:outline-none focus:border-blue-500"
               />
+            </div>
+            {/* Swatches from Theme Tokens */}
+            <div className="flex flex-wrap gap-1.5 mt-2">
+              {Object.keys(themeTokens.colors).map((key) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => handleStyleChange('backgroundColor', `theme-${key}`)}
+                  className="w-4 h-4 rounded-full border border-slate-800 hover:scale-110 hover:border-slate-400 transition-all cursor-pointer relative"
+                  style={{ backgroundColor: themeTokens.colors[key] }}
+                  title={`Apply theme ${key} color (${themeTokens.colors[key]})`}
+                />
+              ))}
             </div>
           </div>
 
@@ -523,11 +558,24 @@ export default function SidebarRight() {
               />
               <input
                 type="text"
-                placeholder="#hex or color name"
+                placeholder="#hex or theme color"
                 value={styles.textColor || ''}
                 onChange={(e) => handleStyleChange('textColor', e.target.value)}
                 className="flex-1 px-3 py-1 bg-slate-900 border border-slate-800 rounded-lg text-slate-250 text-xs focus:outline-none focus:border-blue-500"
               />
+            </div>
+            {/* Swatches from Theme Tokens */}
+            <div className="flex flex-wrap gap-1.5 mt-2">
+              {Object.keys(themeTokens.colors).map((key) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => handleStyleChange('textColor', `theme-${key}`)}
+                  className="w-4 h-4 rounded-full border border-slate-800 hover:scale-110 hover:border-slate-400 transition-all cursor-pointer relative"
+                  style={{ backgroundColor: themeTokens.colors[key] }}
+                  title={`Apply theme ${key} color (${themeTokens.colors[key]})`}
+                />
+              ))}
             </div>
           </div>
 
@@ -599,44 +647,89 @@ export default function SidebarRight() {
             />
           </div>
 
-          {/* Padding Slider (Simple Quick Modifier) */}
-          <div>
-            <div className="flex items-center justify-between mb-1">
-              <label className="text-[10px] font-semibold text-slate-500">
-                Padding
-              </label>
-              <span className="text-[10px] font-mono text-slate-400">
-                {styles.padding || '0px'}
-              </span>
-            </div>
-            <input
-              type="range"
-              min="0"
-              max="64"
-              value={parseInt(styles.padding || '0', 10) || 0}
-              onChange={(e) => handleStyleChange('padding', `${e.target.value}px`)}
-              className="w-full accent-blue-500 bg-slate-850 rounded-lg appearance-none h-1 cursor-pointer"
-            />
-          </div>
+          {/* Figma-style Concentric Box Spacing Widget */}
+          <div className="space-y-2 pt-2">
+            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5 text-center">Box Spacing</label>
+            <div className="relative border border-dashed border-slate-805 bg-slate-950 p-6 rounded-xl flex flex-col items-center justify-center min-h-[140px] select-none">
+              <span className="absolute top-1.5 left-2 text-[7px] text-slate-600 font-bold uppercase tracking-wider font-mono">Margin</span>
+              
+              <input
+                type="text"
+                placeholder="0"
+                value={styles.marginTop || ''}
+                onChange={(e) => handleStyleChange('marginTop', e.target.value)}
+                className="absolute top-1.5 w-8 text-center bg-slate-900/60 border border-slate-800 rounded text-[9px] font-mono text-slate-350 focus:outline-none focus:border-blue-500"
+                title="Margin Top"
+              />
+              <input
+                type="text"
+                placeholder="0"
+                value={styles.marginRight || ''}
+                onChange={(e) => handleStyleChange('marginRight', e.target.value)}
+                className="absolute right-1.5 w-8 text-center bg-slate-900/60 border border-slate-800 rounded text-[9px] font-mono text-slate-350 focus:outline-none focus:border-blue-500"
+                style={{ top: 'calc(50% - 9px)' }}
+                title="Margin Right"
+              />
+              <input
+                type="text"
+                placeholder="0"
+                value={styles.marginBottom || ''}
+                onChange={(e) => handleStyleChange('marginBottom', e.target.value)}
+                className="absolute bottom-1.5 w-8 text-center bg-slate-900/60 border border-slate-800 rounded text-[9px] font-mono text-slate-350 focus:outline-none focus:border-blue-500"
+                title="Margin Bottom"
+              />
+              <input
+                type="text"
+                placeholder="0"
+                value={styles.marginLeft || ''}
+                onChange={(e) => handleStyleChange('marginLeft', e.target.value)}
+                className="absolute left-1.5 w-8 text-center bg-slate-900/60 border border-slate-800 rounded text-[9px] font-mono text-slate-350 focus:outline-none focus:border-blue-500"
+                style={{ top: 'calc(50% - 9px)' }}
+                title="Margin Left"
+              />
 
-          {/* Margin Slider (Simple Quick Modifier) */}
-          <div>
-            <div className="flex items-center justify-between mb-1">
-              <label className="text-[10px] font-semibold text-slate-500">
-                Margin
-              </label>
-              <span className="text-[10px] font-mono text-slate-400">
-                {styles.margin || '0px'}
-              </span>
+              {/* Inner padding box */}
+              <div className="relative w-full border border-slate-850 bg-slate-900/40 p-6 rounded-lg flex flex-col items-center justify-center min-h-[70px]">
+                <span className="absolute top-1 left-1.5 text-[7px] text-slate-550 font-bold uppercase tracking-wider font-mono">Padding</span>
+                
+                <input
+                  type="text"
+                  placeholder="0"
+                  value={styles.paddingTop || ''}
+                  onChange={(e) => handleStyleChange('paddingTop', e.target.value)}
+                  className="absolute top-1 w-8 text-center bg-slate-950 border border-slate-850 rounded text-[9px] font-mono text-slate-300 focus:outline-none focus:border-blue-500"
+                  title="Padding Top"
+                />
+                <input
+                  type="text"
+                  placeholder="0"
+                  value={styles.paddingRight || ''}
+                  onChange={(e) => handleStyleChange('paddingRight', e.target.value)}
+                  className="absolute right-1 w-8 text-center bg-slate-950 border border-slate-850 rounded text-[9px] font-mono text-slate-300 focus:outline-none focus:border-blue-500"
+                  style={{ top: 'calc(50% - 9px)' }}
+                  title="Padding Right"
+                />
+                <input
+                  type="text"
+                  placeholder="0"
+                  value={styles.paddingBottom || ''}
+                  onChange={(e) => handleStyleChange('paddingBottom', e.target.value)}
+                  className="absolute bottom-1 w-8 text-center bg-slate-950 border border-slate-850 rounded text-[9px] font-mono text-slate-300 focus:outline-none focus:border-blue-500"
+                  title="Padding Bottom"
+                />
+                <input
+                  type="text"
+                  placeholder="0"
+                  value={styles.paddingLeft || ''}
+                  onChange={(e) => handleStyleChange('paddingLeft', e.target.value)}
+                  className="absolute left-1 w-8 text-center bg-slate-950 border border-slate-850 rounded text-[9px] font-mono text-slate-300 focus:outline-none focus:border-blue-500"
+                  style={{ top: 'calc(50% - 9px)' }}
+                  title="Padding Left"
+                />
+
+                <span className="text-[9px] text-slate-600 font-mono font-bold uppercase tracking-widest">Content</span>
+              </div>
             </div>
-            <input
-              type="range"
-              min="0"
-              max="64"
-              value={parseInt(styles.margin || '0', 10) || 0}
-              onChange={(e) => handleStyleChange('margin', `${e.target.value}px`)}
-              className="w-full accent-blue-500 bg-slate-850 rounded-lg appearance-none h-1 cursor-pointer"
-            />
           </div>
         </section>
 
@@ -666,6 +759,25 @@ export default function SidebarRight() {
                 onChange={(e) => handleStyleChange('fontSize', `${e.target.value}px`)}
                 className="w-full accent-blue-500 bg-slate-850 rounded-lg appearance-none h-1 cursor-pointer"
               />
+            </div>
+
+            {/* Font Family Selection */}
+            <div>
+              <label className="block text-[10px] font-semibold text-slate-500 mb-1">
+                Font Family
+              </label>
+              <select
+                value={styles.fontFamily || 'default'}
+                onChange={(e) => handleStyleChange('fontFamily', e.target.value)}
+                className="w-full px-2 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-slate-200 text-xs focus:outline-none focus:border-blue-500"
+              >
+                <option value="default">Use Global Default</option>
+                <option value="Geist">Geist (Modern Sans)</option>
+                <option value="Outfit">Outfit (Geometric)</option>
+                <option value="Playfair Display">Playfair Display (Elegant Serif)</option>
+                <option value="Inter">Inter (Workhorse Sans)</option>
+                <option value="monospace">Courier Mono (Coding)</option>
+              </select>
             </div>
 
             {/* Font Weight */}
@@ -766,21 +878,21 @@ export default function SidebarRight() {
         {selectedNode.type === 'Container' && (
           <section className="space-y-4 pt-4 border-t border-slate-900">
             <h3 className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
-              Flexbox Properties
+              Auto Layout Details
             </h3>
 
             {/* Flex Direction */}
             <div>
               <label className="block text-[10px] font-semibold text-slate-500 mb-1">
-                Direction
+                Flow Direction
               </label>
-              <div className="grid grid-cols-2 gap-1 p-0.5 bg-slate-950 rounded-lg border border-slate-800">
+              <div className="grid grid-cols-2 gap-1 p-0.5 bg-slate-950 rounded-lg border border-slate-855">
                 <button
                   onClick={() => handleStyleChange('flexDirection', 'row')}
                   className={`py-1 text-[10px] font-medium rounded transition-all ${
                     styles.flexDirection === 'row'
                       ? 'bg-slate-800 text-white shadow-sm'
-                      : 'text-slate-505 hover:text-slate-300'
+                      : 'text-slate-505 hover:text-slate-350'
                   }`}
                 >
                   Row (Horizontal)
@@ -790,7 +902,7 @@ export default function SidebarRight() {
                   className={`py-1 text-[10px] font-medium rounded transition-all ${
                     styles.flexDirection === 'column' || !styles.flexDirection
                       ? 'bg-slate-800 text-white shadow-sm'
-                      : 'text-slate-505 hover:text-slate-300'
+                      : 'text-slate-550 hover:text-slate-350'
                   }`}
                 >
                   Column (Vertical)
@@ -798,11 +910,43 @@ export default function SidebarRight() {
               </div>
             </div>
 
+            {/* Flex alignments */}
+            <div className="space-y-2 bg-slate-950/40 p-2.5 rounded-lg border border-slate-900/60">
+              <div className="space-y-1">
+                <span className="text-[9px] text-slate-500 font-bold uppercase block">Justify (Main Axis Alignment)</span>
+                <select
+                  value={styles.justifyContent || 'flex-start'}
+                  onChange={(e) => handleStyleChange('justifyContent', e.target.value)}
+                  className="w-full px-2 py-1 bg-slate-950 border border-slate-900 rounded-lg text-xs text-slate-300 focus:outline-none"
+                >
+                  <option value="flex-start">Start (Top / Left)</option>
+                  <option value="center">Center</option>
+                  <option value="flex-end">End (Bottom / Right)</option>
+                  <option value="space-between">Space Between</option>
+                  <option value="space-around">Space Around</option>
+                </select>
+              </div>
+              
+              <div className="space-y-1">
+                <span className="text-[9px] text-slate-550 font-bold uppercase block">Align (Cross Axis Alignment)</span>
+                <select
+                  value={styles.alignItems || 'stretch'}
+                  onChange={(e) => handleStyleChange('alignItems', e.target.value)}
+                  className="w-full px-2 py-1 bg-slate-950 border border-slate-900 rounded-lg text-xs text-slate-300 focus:outline-none"
+                >
+                  <option value="stretch">Stretch (Fill Height/Width)</option>
+                  <option value="flex-start">Start</option>
+                  <option value="center">Center</option>
+                  <option value="flex-end">End</option>
+                </select>
+              </div>
+            </div>
+
             {/* Gap */}
             <div>
               <div className="flex items-center justify-between mb-1">
                 <label className="text-[10px] font-semibold text-slate-500">
-                  Gap Spacing
+                  Item Gap Spacing
                 </label>
                 <span className="text-[10px] font-mono text-slate-400">
                   {styles.gap || '0px'}

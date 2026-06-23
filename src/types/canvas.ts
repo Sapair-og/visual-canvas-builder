@@ -52,6 +52,7 @@ export interface ComponentStyles {
   fontSize?: string;
   fontWeight?: string;
   fontStyle?: string;
+  fontFamily?: string;
   backgroundImage?: string;
 }
 
@@ -84,6 +85,34 @@ export interface CanvasNode {
   children: CanvasNode[];
 }
 
+export interface ThemeTokens {
+  colors: {
+    primary: string;
+    secondary: string;
+    accent: string;
+    background: string;
+    text: string;
+    [key: string]: string;
+  };
+  fonts: {
+    heading: string;
+    body: string;
+  };
+}
+
+export interface LogicFlow {
+  id: string;
+  triggerNodeId: string;
+  triggerEvent: 'click' | 'hover' | 'change' | 'submit';
+  actionType: 'db-select' | 'db-insert' | 'set-text' | 'set-image' | 'toast' | 'navigate' | 'custom-code';
+  targetNodeId?: string;
+  targetProperty?: 'text' | 'imageUrl' | string;
+  dbTable?: string;
+  dbAction?: string;
+  customCode?: string;
+  dataMapping?: string;
+}
+
 export interface ProjectState {
   id: string;
   name: string;
@@ -95,6 +124,8 @@ export interface ProjectState {
   dbBindings?: DataBinding[]; // Database binding arrows configuration
   customScripts?: Record<string, string>; // Script name/node ID -> javascript content
   backendServices?: { id: string; name: string; enabled: boolean; config: any }[]; // Backend visual services state
+  themeTokens?: ThemeTokens;
+  logicFlows?: LogicFlow[];
   userId: string;
   createdAt: string;
   updatedAt: string;
