@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useEditor } from '../context/EditorContext';
-import { Trash2, Settings, HelpCircle, Sliders, Type, Link2, Lock, LockOpen, Sparkles, Copy, Scissors, Clipboard } from 'lucide-react';
+import { Trash2, Settings, HelpCircle, Sliders, Type, Link2, Lock, LockOpen, Sparkles, Copy, Scissors, Clipboard, Layers } from 'lucide-react';
 import { CanvasNode, ComponentStyles } from '../types/canvas';
 
 export default function SidebarRight() {
@@ -156,6 +156,29 @@ export default function SidebarRight() {
       </div>
 
       <div className="p-4 space-y-6">
+        {/* Layer Rank Settings */}
+        {selectedNode.id !== 'root' && (
+          <section className="space-y-2 border-b border-slate-900 pb-4">
+            <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
+              <Layers className="w-3.5 h-3.5 text-blue-450" />
+              <span>Layer Rank (Layout)</span>
+            </h3>
+            <div className="flex items-center gap-3">
+              <input
+                type="number"
+                value={selectedNode.props.layerNo !== undefined ? selectedNode.props.layerNo : 1}
+                onChange={(e) => handlePropChange('layerNo', parseInt(e.target.value) || 1)}
+                className="w-20 px-3 py-1.5 bg-slate-950 border border-slate-900 rounded-xl text-slate-200 text-xs focus:outline-none focus:border-blue-500 font-mono"
+                min={1}
+                max={9999}
+              />
+              <span className="text-[10px] text-slate-500 leading-normal">
+                Siblings with the same rank auto-flow without overlap. Higher ranks stack absolute on top.
+              </span>
+            </div>
+          </section>
+        )}
+
         {/* Alignment Actions */}
         {selectedNode.id !== 'root' && (
           <section className="space-y-2 border-b border-slate-900 pb-4">

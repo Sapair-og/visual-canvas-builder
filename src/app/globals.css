@@ -10,11 +10,29 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  
+  /* Overriding Slate palette with True Black and Neutral Greys */
+  --color-slate-955: #020202;
+  --color-slate-950: #050505;
+  --color-slate-905: #0a0a0a;
+  --color-slate-900: #0f0f0f;
+  --color-slate-855: #151515;
+  --color-slate-850: #1a1a1a;
+  --color-slate-800: #222222;
+  --color-slate-750: #2d2d2d;
+  --color-slate-700: #3f3f46;
+  --color-slate-650: #52525b;
+  --color-slate-600: #71717a;
+  --color-slate-555: #8c8c93;
+  --color-slate-550: #a1a1aa;
+  --color-slate-350: #d4d4d8;
+  --color-slate-205: #e4e4e7;
+  --color-slate-150: #f4f4f5;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
+    --background: #000000;
     --foreground: #ededed;
   }
 }

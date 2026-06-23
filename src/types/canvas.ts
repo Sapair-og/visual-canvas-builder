@@ -69,6 +69,7 @@ export interface ComponentProps {
   visible?: boolean; // Photoshop-style layer eye visibility toggle
   animation?: 'fade' | 'slide-up' | 'zoom-in' | 'bounce' | 'none'; // Canva entrance animations
   hoverEffect?: 'scale' | 'lift' | 'glow' | 'none'; // Canva hover micro-interactions
+  layerNo?: number; // Custom Photoshop-style layer number rank for layout flow
   dataBinding?: {
     tableId: string;
     columnName: string;

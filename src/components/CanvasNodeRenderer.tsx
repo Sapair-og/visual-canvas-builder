@@ -13,9 +13,10 @@ const parsePixelVal = (val?: string, defaultVal = 0): number => {
 
 interface CanvasNodeRendererProps {
   node: CanvasNode;
+  parent?: CanvasNode;
 }
 
-export default function CanvasNodeRenderer({ node }: CanvasNodeRendererProps) {
+export default function CanvasNodeRenderer({ node, parent }: CanvasNodeRendererProps) {
   const { selectedNodeId, selectNode, addNode, moveNode, updateNodeProps, snapToGrid, guides, isPreview } = useEditor();
   const [isDragOver, setIsDragOver] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -143,6 +144,9 @@ export default function CanvasNodeRenderer({ node }: CanvasNodeRendererProps) {
     const startWidth = targetElement.offsetWidth;
     const startHeight = targetElement.offsetHeight;
 
+    let finalWidthVal = startWidth;
+    let finalHeightVal = startHeight;
+
     const handleMouseMove = (moveEvent: MouseEvent) => {
       const deltaX = moveEvent.clientX - startX;
       const deltaY = moveEvent.clientY - startY;
@@ -182,21 +186,34 @@ export default function CanvasNodeRenderer({ node }: CanvasNodeRendererProps) {
         }
       }
 
-      const newWidth = direction !== 'vertical' ? `${newWidthVal}px` : undefined;
-      const newHeight = direction !== 'horizontal' ? `${newHeightVal}px` : undefined;
-
-      updateNodeProps(node.id, {
-        style: {
-          ...node.props.style,
-          ...(newWidth ? { width: newWidth } : {}),
-          ...(newHeight ? { height: newHeight } : {})
-        }
-      });
+      if (direction !== 'vertical') {
+        targetElement.style.width = `${newWidthVal}px`;
+        finalWidthVal = newWidthVal;
+      }
+      if (direction !== 'horizontal') {
+        targetElement.style.height = `${newHeightVal}px`;
+        finalHeightVal = newHeightVal;
+      }
     };
 
     const handleMouseUp = () => {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
+
+      const styleUpdates: any = {};
+      if (direction !== 'vertical') {
+        styleUpdates.width = `${finalWidthVal}px`;
+      }
+      if (direction !== 'horizontal') {
+        styleUpdates.height = `${finalHeightVal}px`;
+      }
+
+      updateNodeProps(node.id, {
+        style: {
+          ...node.props.style,
+          ...styleUpdates
+        }
+      });
     };
 
     window.addEventListener('mousemove', handleMouseMove);
@@ -238,10 +255,26 @@ export default function CanvasNodeRenderer({ node }: CanvasNodeRendererProps) {
         bgImg = `url("${bgImg}")`;
       }
     }
+
+    const layerNo = node.props.layerNo !== undefined ? Number(node.props.layerNo) : 1;
+
+    // Check siblings to enforce flow vs absolute stacking
+    let hasSiblingWithSameLayer = false;
+    if (parent && parent.children) {
+      const siblings = parent.children.filter(c => c.id !== node.id);
+      hasSiblingWithSameLayer = siblings.some(sibling => {
+        const sibLayerNo = sibling.props.layerNo !== undefined ? Number(sibling.props.layerNo) : 1;
+        return sibLayerNo === layerNo;
+      });
+    }
+
+    const forceRelative = node.id !== 'root' && hasSiblingWithSameLayer;
+
     return {
-      position: node.id === 'root' ? 'relative' : s.position,
-      left: s.left,
-      top: s.top,
+      position: node.id === 'root' ? 'relative' : (forceRelative ? 'relative' : (s.position || 'absolute')),
+      left: forceRelative ? undefined : s.left,
+      top: forceRelative ? undefined : s.top,
+      zIndex: forceRelative ? undefined : layerNo,
 
       width: s.width,
       height: s.height,
@@ -286,7 +319,7 @@ export default function CanvasNodeRenderer({ node }: CanvasNodeRendererProps) {
   const renderComponent = () => {
     const inlineStyles = getInlineStyles();
     const childElements = node.children.map((child) => (
-      <CanvasNodeRenderer key={child.id} node={child} />
+      <CanvasNodeRenderer key={child.id} node={child} parent={node} />
     ));
 
     const animationClass = node.props.animation && node.props.animation !== 'none'
