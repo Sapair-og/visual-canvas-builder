@@ -422,8 +422,18 @@ export default function CanvasNodeRenderer({ node, parent }: CanvasNodeRendererP
             />
           );
         }
+        if (isPreview) {
+          return (
+            <Tag
+              style={inlineStyles}
+              className={`${editorOutlineClass} ${node.props.className || ''}`}
+            >
+              {node.props.text}
+            </Tag>
+          );
+        }
         return (
-          <Tag
+          <div
             onClick={handleClick}
             onDoubleClick={() => setIsEditing(true)}
             draggable={!isPreview && !isSelected}
@@ -432,19 +442,19 @@ export default function CanvasNodeRenderer({ node, parent }: CanvasNodeRendererP
             className={`${editorOutlineClass} ${node.props.className || ''}`}
           >
             {/* Visual element tag badge overlay */}
-            {!isPreview && (
-              <div className="absolute top-1 left-2 bg-indigo-650 text-[8px] font-bold text-white px-1.5 py-0.5 rounded opacity-0 group-hover/node:opacity-100 transition-opacity z-10 select-none pointer-events-none">
-                Text ({Tag})
-              </div>
-            )}
-            {isSelected && !isPreview && (
+            <div className="absolute top-1 left-2 bg-indigo-650 text-[8px] font-bold text-white px-1.5 py-0.5 rounded opacity-0 group-hover/node:opacity-100 transition-opacity z-10 select-none pointer-events-none">
+              Text ({Tag})
+            </div>
+            {isSelected && (
               <div className="absolute top-[-18px] left-[-2px] bg-indigo-600 text-white text-[9px] font-mono font-bold px-1.5 py-0.5 rounded-t-md z-40 pointer-events-none select-none shadow">
                 {node.props.layerName || `Text (${Tag})`}
               </div>
             )}
-            {node.props.text}
+            <Tag style={{ margin: 0, padding: 0, fontSize: 'inherit', fontWeight: 'inherit', fontStyle: 'inherit', color: 'inherit', textAlign: 'inherit' }}>
+              {node.props.text}
+            </Tag>
             {renderResizeHandles()}
-          </Tag>
+          </div>
         );
 
       case 'Button':
@@ -486,8 +496,19 @@ export default function CanvasNodeRenderer({ node, parent }: CanvasNodeRendererP
             />
           );
         }
+        if (isPreview) {
+          return (
+            <button
+              onClick={handleClick}
+              style={inlineStyles}
+              className={`${editorOutlineClass} ${node.props.className || ''}`}
+            >
+              {node.props.text}
+            </button>
+          );
+        }
         return (
-          <button
+          <div
             onClick={handleClick}
             onDoubleClick={() => setIsEditing(true)}
             draggable={!isPreview && !isSelected}
@@ -496,19 +517,35 @@ export default function CanvasNodeRenderer({ node, parent }: CanvasNodeRendererP
             className={`${editorOutlineClass} ${node.props.className || ''}`}
           >
             {/* Visual element tag badge overlay */}
-            {!isPreview && (
-              <div className="absolute top-1 left-2 bg-purple-600 text-[8px] font-bold text-white px-1.5 py-0.5 rounded opacity-0 group-hover/node:opacity-100 transition-opacity z-10 select-none pointer-events-none">
-                Button
-              </div>
-            )}
-            {isSelected && !isPreview && (
+            <div className="absolute top-1 left-2 bg-purple-600 text-[8px] font-bold text-white px-1.5 py-0.5 rounded opacity-0 group-hover/node:opacity-100 transition-opacity z-10 select-none pointer-events-none">
+              Button
+            </div>
+            {isSelected && (
               <div className="absolute top-[-18px] left-[-2px] bg-purple-600 text-white text-[9px] font-mono font-bold px-1.5 py-0.5 rounded-t-md z-40 pointer-events-none select-none shadow font-sans">
                 {node.props.layerName || 'Button'}
               </div>
             )}
-            {node.props.text}
+            <button
+              style={{
+                background: 'none',
+                border: 'none',
+                color: 'inherit',
+                font: 'inherit',
+                padding: 0,
+                margin: 0,
+                width: '100%',
+                height: '100%',
+                textAlign: 'inherit',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+              }}
+            >
+              {node.props.text}
+            </button>
             {renderResizeHandles()}
-          </button>
+          </div>
         );
 
       case 'ImageBlock':
