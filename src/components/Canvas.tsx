@@ -3,7 +3,11 @@
 import React, { useState, useEffect } from 'react';
 import { useEditor } from '../context/EditorContext';
 import CanvasNodeRenderer from './CanvasNodeRenderer';
-import { Eye, Save, Code, Laptop, Smartphone, Tablet, Grid, AlertTriangle, CheckCircle, Info, X, Database, Sliders, Terminal, Server, ChevronLeft, ChevronRight } from 'lucide-react';
+import { 
+  Eye, Save, Code, Laptop, Smartphone, Tablet, Grid, AlertTriangle, CheckCircle, Info, X, 
+  Database, Sliders, Terminal, Server, ChevronLeft, ChevronRight, Lock, Unlock, 
+  ChevronsUp, ChevronsDown, Trash2, Copy, Scissors, ArrowUp, ArrowDown
+} from 'lucide-react';
 import ExportModal from './ExportModal';
 import DatabaseSchemaEditor from './DatabaseSchemaEditor';
 import LogicEditor from './LogicEditor';
@@ -44,7 +48,10 @@ export default function Canvas() {
     copyNode,
     cutNode,
     pasteNode,
-    clipboard
+    clipboard,
+    toggleNodeLock,
+    reorderNode,
+    alignNode
   } = useEditor();
   
   const [viewport, setViewport] = useState<'desktop' | 'tablet' | 'mobile'>('desktop');
@@ -414,6 +421,455 @@ export default function Canvas() {
         </div>
       )}
 
+      {/* Canva-Style Contextual Sub-Toolbar */}
+      {!isPreview && workspaceMode === 'design' && (
+        <div className="h-12 border-b border-slate-950 bg-slate-950/60 backdrop-blur px-6 flex items-center justify-between select-none text-xs text-slate-300 z-30 shrink-0 overflow-x-auto overflow-y-hidden scrollbar-none gap-4">
+          {/* Left Side: Element Info & Specific Formatting Tools */}
+          <div className="flex items-center gap-4 shrink-0">
+            {selectedNode && selectedNode.id !== 'root' ? (
+              <>
+                {/* Element Name Badge */}
+                <div className="flex items-center gap-2 font-bold text-white border-r border-slate-900 pr-4">
+                  <span>{selectedNode.type}</span>
+                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 font-mono">
+                    {selectedNode.props.layerName || selectedNode.id}
+                  </span>
+                </div>
+
+                {/* CONTAINER SPECIFIC TOOLS */}
+                {selectedNode.type === 'Container' && (
+                  <div className="flex items-center gap-4">
+                    {/* Background Color swatch */}
+                    <div className="flex items-center gap-2 border-r border-slate-900 pr-4">
+                      <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Bg Color</span>
+                      <input
+                        type="color"
+                        value={selectedNode.props.style?.backgroundColor || '#1e293b'}
+                        onChange={(e) => {
+                          updateNodeProps(selectedNode.id, {
+                            style: { ...selectedNode.props.style, backgroundColor: e.target.value, backgroundImage: '' }
+                          });
+                        }}
+                        className="w-5 h-5 rounded cursor-pointer border border-slate-800 bg-transparent"
+                        title="Choose Background Color"
+                      />
+                    </div>
+                    {/* Flex direction toggle */}
+                    <div className="flex items-center gap-1.5 border-r border-slate-900 pr-4">
+                      <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Layout</span>
+                      <button
+                        onClick={() => updateNodeProps(selectedNode.id, { style: { ...selectedNode.props.style, flexDirection: 'row' } })}
+                        className={`px-2 py-1 rounded-lg text-[9px] font-bold uppercase transition-all cursor-pointer ${
+                          selectedNode.props.style?.flexDirection === 'row'
+                            ? 'bg-blue-600/10 border border-blue-500/30 text-blue-400'
+                            : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        Row
+                      </button>
+                      <button
+                        onClick={() => updateNodeProps(selectedNode.id, { style: { ...selectedNode.props.style, flexDirection: 'column' } })}
+                        className={`px-2 py-1 rounded-lg text-[9px] font-bold uppercase transition-all cursor-pointer ${
+                          (selectedNode.props.style?.flexDirection || 'column') === 'column'
+                            ? 'bg-blue-600/10 border border-blue-500/30 text-blue-400'
+                            : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        Column
+                      </button>
+                    </div>
+                    {/* Gap Input */}
+                    <div className="flex items-center gap-2 border-r border-slate-900 pr-4">
+                      <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Gap</span>
+                      <input
+                        type="number"
+                        value={parseInt(selectedNode.props.style?.gap || '0')}
+                        onChange={(e) => updateNodeProps(selectedNode.id, { style: { ...selectedNode.props.style, gap: `${e.target.value}px` } })}
+                        className="w-12 px-2 py-1 bg-slate-900 border border-slate-800 rounded-lg text-slate-200 text-xs focus:outline-none focus:border-blue-500 font-mono"
+                        min={0}
+                      />
+                      <span className="text-[9px] text-slate-500 font-mono">px</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* TEXTBLOCK SPECIFIC TOOLS */}
+                {selectedNode.type === 'TextBlock' && (
+                  <div className="flex items-center gap-4">
+                    {/* Tag Selector */}
+                    <div className="flex items-center gap-2 border-r border-slate-900 pr-4">
+                      <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Tag</span>
+                      <select
+                        value={selectedNode.props.tag || 'p'}
+                        onChange={(e) => updateNodeProps(selectedNode.id, { tag: e.target.value as any })}
+                        className="bg-slate-900 border border-slate-800 px-2 py-1 rounded-lg text-slate-200 text-[10px] focus:outline-none focus:border-blue-500 font-bold uppercase cursor-pointer"
+                      >
+                        {['h1', 'h2', 'h3', 'p', 'span'].map(t => (
+                          <option key={t} value={t}>{t}</option>
+                        ))}
+                      </select>
+                    </div>
+                    {/* Font Size slider */}
+                    <div className="flex items-center gap-2 border-r border-slate-900 pr-4">
+                      <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Size</span>
+                      <input
+                        type="range"
+                        min="8"
+                        max="72"
+                        value={parseInt(selectedNode.props.style?.fontSize || '16')}
+                        onChange={(e) => updateNodeProps(selectedNode.id, { style: { ...selectedNode.props.style, fontSize: `${e.target.value}px` } })}
+                        className="w-16 accent-blue-500 h-1 bg-slate-850 rounded-lg cursor-pointer"
+                      />
+                      <span className="font-bold text-white font-mono text-[10px] min-w-[28px]">{selectedNode.props.style?.fontSize || '16px'}</span>
+                    </div>
+                    {/* Weight and Style */}
+                    <div className="flex items-center gap-1 border-r border-slate-900 pr-4">
+                      <button
+                        onClick={() => updateNodeProps(selectedNode.id, { style: { ...selectedNode.props.style, fontWeight: selectedNode.props.style?.fontWeight === 'bold' ? 'normal' : 'bold' } })}
+                        className={`p-1.5 rounded-lg border transition-all text-[10px] font-bold cursor-pointer ${
+                          selectedNode.props.style?.fontWeight === 'bold'
+                            ? 'bg-blue-600/10 border-blue-500/30 text-blue-400'
+                            : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
+                        }`}
+                        title="Bold"
+                      >
+                        B
+                      </button>
+                      <button
+                        onClick={() => updateNodeProps(selectedNode.id, { style: { ...selectedNode.props.style, fontStyle: selectedNode.props.style?.fontStyle === 'italic' ? 'normal' : 'italic' } })}
+                        className={`p-1.5 rounded-lg border transition-all text-[10px] italic font-serif cursor-pointer ${
+                          selectedNode.props.style?.fontStyle === 'italic'
+                            ? 'bg-blue-600/10 border-blue-500/30 text-blue-400'
+                            : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
+                        }`}
+                        title="Italic"
+                      >
+                        I
+                      </button>
+                    </div>
+                    {/* Alignment */}
+                    <div className="flex items-center gap-1 border-r border-slate-900 pr-4">
+                      {(['left', 'center', 'right', 'justify'] as const).map(align => (
+                        <button
+                          key={align}
+                          onClick={() => updateNodeProps(selectedNode.id, { style: { ...selectedNode.props.style, textAlign: align } })}
+                          className={`p-1 px-1.5 rounded-lg border text-[9px] font-bold uppercase transition-all cursor-pointer ${
+                            (selectedNode.props.style?.textAlign || 'left') === align
+                              ? 'bg-blue-600/10 border-blue-500/30 text-blue-400'
+                              : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
+                          }`}
+                          title={`Align ${align}`}
+                        >
+                          {align[0]}
+                        </button>
+                      ))}
+                    </div>
+                    {/* Text Color */}
+                    <div className="flex items-center gap-2 border-r border-slate-900 pr-4">
+                      <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Color</span>
+                      <input
+                        type="color"
+                        value={selectedNode.props.style?.textColor || '#ffffff'}
+                        onChange={(e) => updateNodeProps(selectedNode.id, { style: { ...selectedNode.props.style, textColor: e.target.value } })}
+                        className="w-5 h-5 rounded cursor-pointer border border-slate-800 bg-transparent"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* BUTTON SPECIFIC TOOLS */}
+                {selectedNode.type === 'Button' && (
+                  <div className="flex items-center gap-4">
+                    {/* Button label */}
+                    <div className="flex items-center gap-2 border-r border-slate-900 pr-4">
+                      <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Label</span>
+                      <input
+                        type="text"
+                        value={selectedNode.props.text || ''}
+                        onChange={(e) => updateNodeProps(selectedNode.id, { text: e.target.value })}
+                        className="w-24 px-2 py-1 bg-slate-900 border border-slate-800 rounded-lg text-slate-200 text-xs focus:outline-none focus:border-blue-500"
+                      />
+                    </div>
+                    {/* Button Link */}
+                    <div className="flex items-center gap-2 border-r border-slate-900 pr-4">
+                      <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Link</span>
+                      <input
+                        type="text"
+                        placeholder="#"
+                        value={selectedNode.props.linkTo || ''}
+                        onChange={(e) => updateNodeProps(selectedNode.id, { linkTo: e.target.value })}
+                        className="w-24 px-2 py-1 bg-slate-900 border border-slate-800 rounded-lg text-slate-200 text-xs focus:outline-none focus:border-blue-500 font-mono"
+                      />
+                    </div>
+                    {/* Background color */}
+                    <div className="flex items-center gap-2 border-r border-slate-900 pr-4">
+                      <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Bg Color</span>
+                      <input
+                        type="color"
+                        value={selectedNode.props.style?.backgroundColor || '#3b82f6'}
+                        onChange={(e) => updateNodeProps(selectedNode.id, { style: { ...selectedNode.props.style, backgroundColor: e.target.value } })}
+                        className="w-5 h-5 rounded cursor-pointer border border-slate-800 bg-transparent"
+                      />
+                    </div>
+                    {/* Text Color */}
+                    <div className="flex items-center gap-2 border-r border-slate-900 pr-4">
+                      <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Text Color</span>
+                      <input
+                        type="color"
+                        value={selectedNode.props.style?.textColor || '#ffffff'}
+                        onChange={(e) => updateNodeProps(selectedNode.id, { style: { ...selectedNode.props.style, textColor: e.target.value } })}
+                        className="w-5 h-5 rounded cursor-pointer border border-slate-800 bg-transparent"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* IMAGEBLOCK SPECIFIC TOOLS */}
+                {selectedNode.type === 'ImageBlock' && (
+                  <div className="flex items-center gap-4">
+                    {/* Image URL */}
+                    <div className="flex items-center gap-2 border-r border-slate-900 pr-4">
+                      <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">URL</span>
+                      <input
+                        type="text"
+                        placeholder="Source URL"
+                        value={selectedNode.props.imageUrl || ''}
+                        onChange={(e) => updateNodeProps(selectedNode.id, { imageUrl: e.target.value })}
+                        className="w-40 px-2 py-1 bg-slate-900 border border-slate-800 rounded-lg text-slate-200 text-xs focus:outline-none focus:border-blue-500 font-mono"
+                      />
+                    </div>
+                    {/* Image Alt */}
+                    <div className="flex items-center gap-2 border-r border-slate-900 pr-4">
+                      <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Alt</span>
+                      <input
+                        type="text"
+                        placeholder="SEO Alternate description"
+                        value={selectedNode.props.imageAlt || ''}
+                        onChange={(e) => updateNodeProps(selectedNode.id, { imageAlt: e.target.value })}
+                        className="w-28 px-2 py-1 bg-slate-900 border border-slate-800 rounded-lg text-slate-200 text-xs focus:outline-none focus:border-blue-500"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* DIVIDER SPECIFIC TOOLS */}
+                {selectedNode.type === 'Divider' && (
+                  <div className="flex items-center gap-4">
+                    {/* Thickness */}
+                    <div className="flex items-center gap-2 border-r border-slate-900 pr-4">
+                      <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Thickness</span>
+                      <input
+                        type="number"
+                        value={parseInt(selectedNode.props.style?.height || '2')}
+                        onChange={(e) => updateNodeProps(selectedNode.id, { style: { ...selectedNode.props.style, height: `${e.target.value}px` } })}
+                        className="w-12 px-2 py-1 bg-slate-900 border border-slate-800 rounded-lg text-slate-200 text-xs focus:outline-none focus:border-blue-500 font-mono"
+                        min={1}
+                      />
+                    </div>
+                    {/* Color */}
+                    <div className="flex items-center gap-2 border-r border-slate-900 pr-4">
+                      <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Color</span>
+                      <input
+                        type="color"
+                        value={selectedNode.props.style?.backgroundColor || '#334155'}
+                        onChange={(e) => updateNodeProps(selectedNode.id, { style: { ...selectedNode.props.style, backgroundColor: e.target.value } })}
+                        className="w-5 h-5 rounded cursor-pointer border border-slate-800 bg-transparent"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* ICON SPECIFIC TOOLS */}
+                {selectedNode.type === 'Icon' && (
+                  <div className="flex items-center gap-4">
+                    {/* Selector */}
+                    <div className="flex items-center gap-2 border-r border-slate-900 pr-4">
+                      <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Icon</span>
+                      <select
+                        value={selectedNode.props.iconName || 'Star'}
+                        onChange={(e) => updateNodeProps(selectedNode.id, { iconName: e.target.value as any })}
+                        className="bg-slate-900 border border-slate-800 px-2 py-1 rounded-lg text-slate-200 text-[10px] focus:outline-none focus:border-blue-500 font-bold cursor-pointer"
+                      >
+                        {['Sparkles', 'Mail', 'Lock', 'Settings', 'Eye', 'Heart', 'Star', 'Search', 'Home', 'User', 'Phone', 'Menu'].map(i => (
+                          <option key={i} value={i}>{i}</option>
+                        ))}
+                      </select>
+                    </div>
+                    {/* Color */}
+                    <div className="flex items-center gap-2 border-r border-slate-900 pr-4">
+                      <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Color</span>
+                      <input
+                        type="color"
+                        value={selectedNode.props.style?.textColor || '#eab308'}
+                        onChange={(e) => updateNodeProps(selectedNode.id, { style: { ...selectedNode.props.style, textColor: e.target.value } })}
+                        className="w-5 h-5 rounded cursor-pointer border border-slate-800 bg-transparent"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* Stacking layerNo rank (common for all elements except root) */}
+                <div className="flex items-center gap-2 border-r border-slate-900 pr-4">
+                  <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Layer Rank</span>
+                  <input
+                    type="number"
+                    value={selectedNode.props.layerNo !== undefined ? selectedNode.props.layerNo : 1}
+                    onChange={(e) => updateNodeProps(selectedNode.id, { layerNo: parseInt(e.target.value) || 1 })}
+                    className="w-12 px-2 py-1 bg-slate-900 border border-slate-800 rounded-lg text-slate-200 text-xs focus:outline-none font-mono focus:border-blue-500"
+                    min={1}
+                  />
+                </div>
+              </>
+            ) : (
+              <>
+                {/* ROOT CANVAS TOOLS */}
+                <div className="flex items-center gap-2 font-bold text-white border-r border-slate-900 pr-4">
+                  <span>Page Settings</span>
+                </div>
+                {/* Canvas Width */}
+                <div className="flex items-center gap-2 border-r border-slate-900 pr-4">
+                  <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Width</span>
+                  <input
+                    type="number"
+                    value={parseInt(canvasState.props.style?.width || '800')}
+                    onChange={(e) => updateNodeProps('root', { style: { ...canvasState.props.style, width: `${e.target.value}px` } })}
+                    className="w-16 px-2 py-1 bg-slate-900 border border-slate-800 rounded-lg text-slate-200 text-xs focus:outline-none font-mono focus:border-blue-500"
+                    min={300}
+                  />
+                  <span className="text-[9px] text-slate-550 font-mono">px</span>
+                </div>
+                {/* Canvas Height */}
+                <div className="flex items-center gap-2 border-r border-slate-900 pr-4">
+                  <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Height</span>
+                  <input
+                    type="number"
+                    value={parseInt(canvasState.props.style?.height || '600')}
+                    onChange={(e) => updateNodeProps('root', { style: { ...canvasState.props.style, height: `${e.target.value}px` } })}
+                    className="w-16 px-2 py-1 bg-slate-900 border border-slate-800 rounded-lg text-slate-200 text-xs focus:outline-none font-mono focus:border-blue-500"
+                    min={300}
+                  />
+                  <span className="text-[9px] text-slate-550 font-mono">px</span>
+                </div>
+                {/* Page Background */}
+                <div className="flex items-center gap-2 border-r border-slate-900 pr-4">
+                  <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Page Color</span>
+                  <input
+                    type="color"
+                    value={canvasState.props.style?.backgroundColor || '#0f172a'}
+                    onChange={(e) => updateNodeProps('root', { style: { ...canvasState.props.style, backgroundColor: e.target.value } })}
+                    className="w-5 h-5 rounded cursor-pointer border border-slate-800 bg-transparent"
+                  />
+                </div>
+                {/* Clear guidelines */}
+                {guides.length > 0 && (
+                  <button
+                    onClick={() => {
+                      guides.forEach(g => removeGuide(g.id));
+                    }}
+                    className="px-2.5 py-1 bg-slate-900 hover:bg-slate-800 border border-slate-855 text-slate-400 hover:text-white rounded-lg text-[10px] font-bold uppercase transition-all cursor-pointer"
+                  >
+                    Clear Guides
+                  </button>
+                )}
+              </>
+            )}
+          </div>
+
+          {/* Right Side: Common Align/Stacking/Delete Tools */}
+          {selectedNode && selectedNode.id !== 'root' && (
+            <div className="flex items-center gap-1.5 shrink-0 ml-auto">
+              {/* Lock Toggle */}
+              <button
+                onClick={() => toggleNodeLock(selectedNode.id)}
+                className={`p-1.5 rounded-lg border transition-all cursor-pointer ${
+                  selectedNode.props.locked
+                    ? 'bg-blue-600/10 border-blue-500/30 text-blue-400 shadow-[0_0_10px_rgba(59,130,246,0.1)]'
+                    : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
+                }`}
+                title={selectedNode.props.locked ? 'Unlock Element' : 'Lock Element'}
+              >
+                {selectedNode.props.locked ? <Lock className="w-3.5 h-3.5" /> : <Unlock className="w-3.5 h-3.5" />}
+              </button>
+
+              <div className="h-4 w-px bg-slate-900 mx-1" />
+
+              {/* Order Depth */}
+              <button
+                onClick={() => reorderNode(selectedNode.id, 'front')}
+                className="p-1.5 bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-400 hover:text-white rounded-lg transition-all cursor-pointer"
+                title="Bring to Front"
+              >
+                <ChevronsUp className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={() => reorderNode(selectedNode.id, 'up')}
+                className="p-1.5 bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-400 hover:text-white rounded-lg transition-all cursor-pointer"
+                title="Bring Forward"
+              >
+                <ArrowUp className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={() => reorderNode(selectedNode.id, 'down')}
+                className="p-1.5 bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-400 hover:text-white rounded-lg transition-all cursor-pointer"
+                title="Send Backward"
+              >
+                <ArrowDown className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={() => reorderNode(selectedNode.id, 'back')}
+                className="p-1.5 bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-400 hover:text-white rounded-lg transition-all cursor-pointer"
+                title="Send to Back"
+              >
+                <ChevronsDown className="w-3.5 h-3.5" />
+              </button>
+
+              <div className="h-4 w-px bg-slate-900 mx-1" />
+
+              {/* Alignments */}
+              {(['left', 'center', 'right', 'top', 'middle', 'bottom'] as const).map(align => (
+                <button
+                  key={align}
+                  onClick={() => alignNode(selectedNode.id, align)}
+                  className="p-1 px-1.5 bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-400 hover:text-white rounded-lg text-[9px] font-bold uppercase transition-all font-mono cursor-pointer"
+                  title={`Align Layer ${align}`}
+                >
+                  {align === 'middle' ? 'MID' : align.slice(0, 3)}
+                </button>
+              ))}
+
+              <div className="h-4 w-px bg-slate-900 mx-1" />
+
+              {/* Clipboard Actions */}
+              <button
+                onClick={() => copyNode(selectedNode.id)}
+                className="p-1.5 bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-400 hover:text-white rounded-lg transition-all cursor-pointer"
+                title="Copy Layer (Ctrl+C)"
+              >
+                <Copy className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={() => cutNode(selectedNode.id)}
+                className="p-1.5 bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-400 hover:text-white rounded-lg transition-all cursor-pointer"
+                title="Cut Layer (Ctrl+X)"
+              >
+                <Scissors className="w-3.5 h-3.5" />
+              </button>
+
+              <div className="h-4 w-px bg-slate-900 mx-1" />
+
+              {/* Delete */}
+              <button
+                onClick={() => deleteNode(selectedNode.id)}
+                className="p-1.5 bg-slate-900 border border-slate-800 hover:border-red-500 hover:bg-red-500/10 text-red-500 hover:text-red-400 rounded-lg transition-all cursor-pointer"
+                title="Delete Layer (Delete)"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Main Droppable Canvas Viewport */}
       {workspaceMode === 'data-flow' ? (
         <DatabaseSchemaEditor />
@@ -423,113 +879,6 @@ export default function Canvas() {
         <BackendDeployer />
       ) : (
         <div className="flex-1 overflow-auto p-8 pb-32 flex items-start justify-center bg-slate-950 bg-[radial-gradient(#1e293b_1px,transparent_1px)] [background-size:16px_16px] relative">
-        
-        {/* Floating Text Formatting Toolbar */}
-        {!isPreview && isTextOrButton && (
-          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-45 bg-slate-900/95 backdrop-blur border border-slate-800 rounded-xl px-4 py-2 shadow-2xl flex items-center gap-3 animate-slide-in select-none text-xs text-slate-300">
-            {/* Font Size */}
-            <div className="flex items-center gap-2 border-r border-slate-800 pr-3">
-              <span className="text-[10px] text-slate-400 font-mono">Size</span>
-              <input 
-                type="range" 
-                min="8" 
-                max="72" 
-                value={parseInt(selectedNode?.props?.style?.fontSize || '16')}
-                onChange={(e) => {
-                  const size = `${e.target.value}px`;
-                  updateNodeProps(selectedNodeId!, {
-                    style: {
-                      ...selectedNode?.props?.style,
-                      fontSize: size
-                    }
-                  });
-                }}
-                className="w-16 accent-blue-500 h-1 bg-slate-850 rounded-lg cursor-pointer"
-              />
-              <span className="text-[10px] text-white font-bold font-mono min-w-[28px]">{selectedNode?.props?.style?.fontSize || '16px'}</span>
-            </div>
-
-            {/* Bold / Italic */}
-            <div className="flex items-center gap-1 border-r border-slate-800 pr-3">
-              <button
-                onClick={() => {
-                  const isBold = selectedNode?.props?.style?.fontWeight === 'bold';
-                  updateNodeProps(selectedNodeId!, {
-                    style: {
-                      ...selectedNode?.props?.style,
-                      fontWeight: isBold ? 'normal' : 'bold'
-                    }
-                  });
-                }}
-                className={`p-1.5 rounded hover:bg-slate-850 hover:text-white font-bold transition-all text-[11px] ${
-                  selectedNode?.props?.style?.fontWeight === 'bold' ? 'text-blue-400 bg-blue-500/10' : ''
-                }`}
-                title="Bold"
-              >
-                B
-              </button>
-              <button
-                onClick={() => {
-                  const isItalic = selectedNode?.props?.style?.fontStyle === 'italic';
-                  updateNodeProps(selectedNodeId!, {
-                    style: {
-                      ...selectedNode?.props?.style,
-                      fontStyle: isItalic ? 'normal' : 'italic'
-                    }
-                  });
-                }}
-                className={`p-1.5 rounded hover:bg-slate-850 hover:text-white italic font-serif transition-all text-[11px] ${
-                  selectedNode?.props?.style?.fontStyle === 'italic' ? 'text-blue-400 bg-blue-500/10' : ''
-                }`}
-                title="Italic"
-              >
-                I
-              </button>
-            </div>
-
-            {/* Align */}
-            <div className="flex items-center gap-1 border-r border-slate-800 pr-3">
-              {(['left', 'center', 'right'] as const).map((align) => (
-                <button
-                  key={align}
-                  onClick={() => {
-                    updateNodeProps(selectedNodeId!, {
-                      style: {
-                        ...selectedNode?.props?.style,
-                        textAlign: align
-                      }
-                    });
-                  }}
-                  className={`p-1 px-1.5 rounded hover:bg-slate-850 hover:text-white uppercase text-[9px] font-bold font-mono transition-all ${
-                    (selectedNode?.props?.style?.textAlign || 'left') === align ? 'text-blue-400 bg-blue-500/10' : ''
-                  }`}
-                  title={`Align ${align}`}
-                >
-                  {align[0]}
-                </button>
-              ))}
-            </div>
-
-            {/* Text Color */}
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] text-slate-400 font-mono">Color</span>
-              <input 
-                type="color" 
-                value={selectedNode?.props?.style?.textColor || '#ffffff'}
-                onChange={(e) => {
-                  updateNodeProps(selectedNodeId!, {
-                    style: {
-                      ...selectedNode?.props?.style,
-                      textColor: e.target.value
-                    }
-                  });
-                }}
-                className="w-4 h-4 rounded cursor-pointer border border-slate-700 bg-transparent"
-                title="Text Color"
-              />
-            </div>
-          </div>
-        )}
         <div 
           className={`w-full ${getViewportWidth()} bg-white dark:bg-slate-950 rounded-2xl shadow-[0_24px_70px_rgba(0,0,0,0.55)] border border-slate-800/60 relative pl-6 pt-6 overflow-hidden ${!isPreview ? 'ring-1 ring-blue-500/20 shadow-[0_0_50px_-10px_rgba(59,130,246,0.15)]' : ''}`}
           style={{

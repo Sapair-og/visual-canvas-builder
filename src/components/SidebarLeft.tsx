@@ -100,14 +100,15 @@ export default function SidebarLeft() {
     updateDbConfig,
     dbTables,
     leftSidebarCollapsed,
+    toggleLeftSidebar,
     copyNode,
     cutNode,
     pasteNode,
-    clipboard
+    clipboard,
+    setActiveDragType,
+    setActiveDragGrabOffset
   } = useEditor();
 
-  if (leftSidebarCollapsed) return null;
-  
   const [activeTab, setActiveTab] = useState<'components' | 'layers' | 'templates' | 'media' | 'database'>('components');
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState<string>('');
@@ -196,6 +197,13 @@ export default function SidebarLeft() {
   const handleDragStart = (e: React.DragEvent, type: NodeType) => {
     e.dataTransfer.setData('application/react-craft-type', type);
     e.dataTransfer.effectAllowed = 'copy';
+    setActiveDragType(type);
+    setActiveDragGrabOffset({ x: 0, y: 0 });
+  };
+
+  const handleDragEnd = () => {
+    setActiveDragType(null);
+    setActiveDragGrabOffset(null);
   };
 
   const startRename = (nodeId: string, currentName: string) => {
@@ -208,6 +216,17 @@ export default function SidebarLeft() {
       renameNode(nodeId, renameValue.trim());
     }
     setEditingNodeId(null);
+  };
+
+  const handleTabClick = (tab: typeof activeTab) => {
+    if (activeTab === tab) {
+      toggleLeftSidebar(); // Toggle open/collapse
+    } else {
+      setActiveTab(tab);
+      if (leftSidebarCollapsed) {
+        toggleLeftSidebar(); // Open if collapsed
+      }
+    }
   };
 
   const renderLayerItem = (node: CanvasNode, depth = 0): React.ReactNode => {
@@ -301,7 +320,7 @@ export default function SidebarLeft() {
                 className="p-0.5 text-slate-500 hover:text-white hover:bg-slate-800 rounded transition-all"
                 title="Copy Layer (Ctrl+C)"
               >
-                <Copy className="w-3 h-3" />
+                <Copy className="w-3.5 h-3.5" />
               </button>
               <button 
                 onClick={(e) => {
@@ -311,7 +330,7 @@ export default function SidebarLeft() {
                 className="p-0.5 text-slate-500 hover:text-white hover:bg-slate-800 rounded transition-all"
                 title="Cut Layer (Ctrl+X)"
               >
-                <Scissors className="w-3 h-3" />
+                <Scissors className="w-3.5 h-3.5" />
               </button>
               {node.type === 'Container' && (
                 <button 
@@ -351,7 +370,7 @@ export default function SidebarLeft() {
                   e.stopPropagation();
                   deleteNode(node.id);
                 }}
-                className="p-0.5 text-slate-550 hover:text-red-400 hover:bg-slate-800 rounded transition-all"
+                className="p-0.5 text-slate-555 hover:text-red-400 hover:bg-slate-800 rounded transition-all"
                 title="Delete Layer"
               >
                 <Trash2 className="w-3 h-3" />
@@ -382,426 +401,400 @@ export default function SidebarLeft() {
   };
 
   return (
-    <aside className="w-66 border-r border-slate-900 bg-slate-950/80 backdrop-blur-lg flex flex-col h-full select-none">
-      {/* Top branding / return link */}
-      <div className="p-4 border-b border-slate-900 flex items-center justify-between">
-        <Link 
-          href="/" 
-          className="flex items-center gap-2 hover:opacity-90 transition-opacity"
-        >
-          <div className="w-7 h-7 rounded-lg bg-gradient-to-tr from-blue-500 via-indigo-500 to-purple-600 flex items-center justify-center shadow-lg shadow-blue-500/20">
-            <Sparkles className="w-3.5 h-3.5 text-white" />
+    <div className="flex h-full shrink-0 select-none">
+      {/* 1. Canva-style Left Icon Navigation Dock */}
+      <div className="w-16 bg-slate-955 border-r border-slate-900 flex flex-col items-center py-4 justify-between shrink-0 z-20">
+        <div className="flex flex-col items-center w-full gap-5">
+          {/* Logo / Home Button */}
+          <Link 
+            href="/" 
+            className="mb-4 p-2 rounded-xl bg-gradient-to-tr from-blue-500 via-indigo-500 to-purple-600 flex items-center justify-center text-white shadow-lg shadow-blue-500/20 hover:scale-105 transition-all cursor-pointer"
+            title="Return to Dashboard"
+          >
+            <Sparkles className="w-5 h-5" />
+          </Link>
+
+          {/* Icons stack */}
+          <div className="flex flex-col items-center w-full gap-2">
+            {[
+              { id: 'components', label: 'Elements', icon: Layout },
+              { id: 'layers', label: 'Layers', icon: Layers },
+              { id: 'templates', label: 'Layouts', icon: LayoutGrid },
+              { id: 'media', label: 'Media', icon: ImageIcon },
+              { id: 'database', label: 'Database', icon: Database },
+            ].map((tab) => {
+              const Icon = tab.icon;
+              const isActive = activeTab === tab.id && !leftSidebarCollapsed;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => handleTabClick(tab.id as any)}
+                  className={`w-12 h-12 flex flex-col items-center justify-center gap-1 rounded-xl transition-all border ${
+                    isActive
+                      ? 'bg-blue-600/10 border-blue-500/30 text-blue-400 font-medium'
+                      : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-900/40'
+                  }`}
+                  title={tab.label}
+                >
+                  <Icon className="w-4 h-4" />
+                  <span className="text-[8px] font-medium tracking-wide">{tab.label}</span>
+                </button>
+              );
+            })}
           </div>
-          <span className="font-bold text-sm bg-gradient-to-r from-white via-slate-200 to-slate-400 bg-clip-text text-transparent tracking-wide">
-            Dashboard
-          </span>
-        </Link>
-        
-        {/* Quick Save Button */}
+        </div>
+
+        {/* Bottom portion: Save button */}
         <button
           onClick={saveProject}
           title="Save Project (Ctrl+S)"
-          className="p-1.5 bg-slate-900/60 hover:bg-slate-800 text-slate-400 hover:text-white rounded-lg border border-slate-800/80 hover:border-slate-700 transition-all cursor-pointer"
+          className="p-2.5 bg-slate-900/60 hover:bg-slate-800 text-slate-400 hover:text-white rounded-xl border border-slate-800/80 hover:border-slate-700 transition-all cursor-pointer shadow"
         >
-          <Save className="w-3.5 h-3.5" />
+          <Save className="w-4 h-4" />
         </button>
       </div>
 
-      {/* Modern Tabs Navigation */}
-      <div className="flex border-b border-slate-900 bg-slate-950/20 p-2 gap-1 overflow-x-auto scrollbar-none shrink-0">
-        <button
-          onClick={() => setActiveTab('components')}
-          className={`flex-1 py-1.5 px-1.5 text-[9px] font-bold uppercase tracking-wider rounded-lg transition-all flex flex-col items-center justify-center gap-1.5 shrink-0 border border-transparent ${
-            activeTab === 'components'
-              ? 'bg-gradient-to-r from-blue-600 to-indigo-650 text-white shadow-md shadow-blue-500/10 border-blue-500/10'
-              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/30'
-          }`}
-        >
-          <Layout className="w-3.5 h-3.5" />
-          <span>Nodes</span>
-        </button>
-        <button
-          onClick={() => setActiveTab('layers')}
-          className={`flex-1 py-1.5 px-1.5 text-[9px] font-bold uppercase tracking-wider rounded-lg transition-all flex flex-col items-center justify-center gap-1.5 shrink-0 border border-transparent ${
-            activeTab === 'layers'
-              ? 'bg-gradient-to-r from-blue-600 to-indigo-650 text-white shadow-md shadow-blue-500/10 border-blue-500/10'
-              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/30'
-          }`}
-        >
-          <Layers className="w-3.5 h-3.5" />
-          <span>Layers</span>
-        </button>
-        <button
-          onClick={() => setActiveTab('templates')}
-          className={`flex-1 py-1.5 px-1.5 text-[9px] font-bold uppercase tracking-wider rounded-lg transition-all flex flex-col items-center justify-center gap-1.5 shrink-0 border border-transparent ${
-            activeTab === 'templates'
-              ? 'bg-gradient-to-r from-blue-600 to-indigo-650 text-white shadow-md shadow-blue-500/10 border-blue-500/10'
-              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/30'
-          }`}
-        >
-          <LayoutGrid className="w-3.5 h-3.5" />
-          <span>Layouts</span>
-        </button>
-        <button
-          onClick={() => setActiveTab('media')}
-          className={`flex-1 py-1.5 px-1.5 text-[9px] font-bold uppercase tracking-wider rounded-lg transition-all flex flex-col items-center justify-center gap-1.5 shrink-0 border border-transparent ${
-            activeTab === 'media'
-              ? 'bg-gradient-to-r from-blue-600 to-indigo-650 text-white shadow-md shadow-blue-500/10 border-blue-500/10'
-              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/30'
-          }`}
-        >
-          <ImageIcon className="w-3.5 h-3.5" />
-          <span>Media</span>
-        </button>
-        <button
-          onClick={() => setActiveTab('database')}
-          className={`flex-1 py-1.5 px-1.5 text-[9px] font-bold uppercase tracking-wider rounded-lg transition-all flex flex-col items-center justify-center gap-1.5 shrink-0 border border-transparent ${
-            activeTab === 'database'
-              ? 'bg-gradient-to-r from-blue-600 to-indigo-650 text-white shadow-md shadow-blue-500/10 border-blue-500/10'
-              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/30'
-          }`}
-        >
-          <Database className="w-3.5 h-3.5" />
-          <span>DB</span>
-        </button>
-      </div>
-
-      {/* Tab Panels */}
-      <div className="flex-1 overflow-y-auto min-h-0">
-        {activeTab === 'components' && (
-          <div className="p-4 space-y-4">
-            <div>
-              <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-                Component Library
-              </h2>
-              <p className="text-[10px] text-slate-500 mt-0.5">
-                Drag items onto the canvas or a container.
-              </p>
-            </div>
-            
-            <div className="space-y-3">
-              {LIBRARY_ITEMS.map((item) => {
-                const Icon = item.icon;
-                return (
-                  <div
-                    key={item.type}
-                    draggable
-                    onDragStart={(e) => handleDragStart(e, item.type)}
-                    className="group flex items-start gap-3.5 p-3.5 bg-slate-900/30 hover:bg-slate-900/90 border border-slate-900 hover:border-blue-500/25 rounded-2xl cursor-grab active:cursor-grabbing hover:scale-[1.01] hover:shadow-lg shadow-sm hover:shadow-blue-500/5 transition-all duration-250 ease-out"
-                  >
-                    <div className="p-2 bg-slate-900 border border-slate-800 rounded-xl text-slate-400 group-hover:text-blue-450 group-hover:border-blue-500/20 group-hover:shadow-[0_0_10px_rgba(59,130,246,0.15)] transition-all">
-                      <Icon className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <h3 className="text-xs font-bold text-slate-200 group-hover:text-white transition-colors">
-                        {item.label}
-                      </h3>
-                      <p className="text-[10px] text-slate-500 leading-normal mt-0.5">
-                        {item.description}
-                      </p>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        {activeTab === 'layers' && (
-          <div className="p-4 space-y-4">
-            <div>
-              <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-                Layers Outline
-              </h2>
-              <p className="text-[10px] text-slate-500 mt-0.5">
-                Outline of your design elements tree. Double click to rename.
-              </p>
-            </div>
-            <div className="space-y-1 py-1">
-              {canvasState ? renderLayerItem(canvasState) : (
-                <p className="text-[11px] text-slate-600 text-center py-4">No canvas elements loaded.</p>
-              )}
-            </div>
-          </div>
-        )}
-
-        {activeTab === 'templates' && (
-          <div className="p-4 space-y-4">
-            <div>
-              <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-                Pre-styled Layouts
-              </h2>
-              <p className="text-[10px] text-slate-500 mt-0.5">
-                Inject pre-made responsive block layouts.
-              </p>
-            </div>
-            
-            <div className="space-y-3 py-1">
-              {TEMPLATES.map((tpl) => (
-                <div
-                  key={tpl.id}
-                  onClick={() => addTemplate(tpl)}
-                  className="group flex flex-col items-start gap-2 p-4 bg-slate-900/30 hover:bg-slate-900/90 border border-slate-900 hover:border-blue-500/25 rounded-2xl cursor-pointer hover:scale-[1.01] hover:shadow-lg shadow-sm hover:shadow-blue-500/5 transition-all duration-250 ease-out"
-                >
-                  <div className="flex items-center justify-between w-full">
-                    <h3 className="text-xs font-bold text-slate-200 group-hover:text-white transition-colors">
-                      {tpl.name}
-                    </h3>
-                    <LayoutGrid className="w-3.5 h-3.5 text-slate-500 group-hover:text-blue-400 transition-colors" />
-                  </div>
-                  <p className="text-[10px] text-slate-500 leading-normal">
-                    {tpl.description}
+      {/* 2. Expanded Sidebar panel details */}
+      {!leftSidebarCollapsed && (
+        <aside className="w-72 border-r border-slate-900 bg-slate-950/80 backdrop-blur-lg flex flex-col h-full z-10 animate-in slide-in-from-left duration-200">
+          <div className="flex-1 overflow-y-auto min-h-0">
+            {activeTab === 'components' && (
+              <div className="p-4 space-y-4">
+                <div>
+                  <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                    Component Library
+                  </h2>
+                  <p className="text-[10px] text-slate-500 mt-0.5">
+                    Drag items onto the canvas or a container.
                   </p>
                 </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {activeTab === 'media' && (
-          <div className="p-4 space-y-5">
-            <div>
-              <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-                Media & Backgrounds
-              </h2>
-              <p className="text-[10px] text-slate-500 mt-0.5">
-                Apply presets to the selected Container or Image element.
-              </p>
-            </div>
-
-            {!selectedNodeId || !selectedNode ? (
-              <div className="p-4 rounded-xl bg-slate-900/40 border border-slate-900 text-center text-[10px] text-slate-500">
-                Please select a Container box or Image block on the canvas to apply presets.
+                
+                <div className="space-y-3">
+                  {LIBRARY_ITEMS.map((item) => {
+                    const Icon = item.icon;
+                    return (
+                      <div
+                        key={item.type}
+                        draggable
+                        onDragStart={(e) => handleDragStart(e, item.type)}
+                        onDragEnd={handleDragEnd}
+                        className="group flex items-start gap-3.5 p-3.5 bg-slate-900/30 hover:bg-slate-900/90 border border-slate-900 hover:border-blue-500/25 rounded-2xl cursor-grab active:cursor-grabbing hover:scale-[1.01] hover:shadow-lg shadow-sm hover:shadow-blue-500/5 transition-all duration-250 ease-out"
+                      >
+                        <div className="p-2 bg-slate-900 border border-slate-800 rounded-xl text-slate-400 group-hover:text-blue-450 group-hover:border-blue-500/20 group-hover:shadow-[0_0_10px_rgba(59,130,246,0.15)] transition-all">
+                          <Icon className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <h3 className="text-xs font-bold text-slate-200 group-hover:text-white transition-colors">
+                            {item.label}
+                          </h3>
+                          <p className="text-[10px] text-slate-500 leading-normal mt-0.5">
+                            {item.description}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
-            ) : (
-              <div className="space-y-4">
-                {/* Active selection banner */}
-                <div className="text-[10px] bg-blue-600/10 border border-blue-500/20 text-blue-400 rounded-lg p-2 flex items-center justify-between font-mono">
-                  <span>Selected: {selectedNode.type}</span>
+            )}
+
+            {activeTab === 'layers' && (
+              <div className="p-4 space-y-4">
+                <div>
+                  <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                    Layers Outline
+                  </h2>
+                  <p className="text-[10px] text-slate-500 mt-0.5">
+                    Outline of your design elements tree. Double click to rename.
+                  </p>
+                </div>
+                <div className="space-y-1 py-1">
+                  {canvasState ? renderLayerItem(canvasState) : (
+                    <p className="text-[11px] text-slate-600 text-center py-4">No canvas elements loaded.</p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'templates' && (
+              <div className="p-4 space-y-4">
+                <div>
+                  <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                    Pre-styled Layouts
+                  </h2>
+                  <p className="text-[10px] text-slate-500 mt-0.5">
+                    Inject pre-made responsive block layouts.
+                  </p>
+                </div>
+                
+                <div className="space-y-3 py-1">
+                  {TEMPLATES.map((tpl) => (
+                    <div
+                      key={tpl.id}
+                      onClick={() => addTemplate(tpl)}
+                      className="group flex flex-col items-start gap-2 p-4 bg-slate-900/30 hover:bg-slate-900/90 border border-slate-900 hover:border-blue-500/25 rounded-2xl cursor-pointer hover:scale-[1.01] hover:shadow-lg shadow-sm hover:shadow-blue-500/5 transition-all duration-250 ease-out"
+                    >
+                      <div className="flex items-center justify-between w-full">
+                        <h3 className="text-xs font-bold text-slate-200 group-hover:text-white transition-colors">
+                          {tpl.name}
+                        </h3>
+                        <LayoutGrid className="w-3.5 h-3.5 text-slate-500 group-hover:text-blue-400 transition-colors" />
+                      </div>
+                      <p className="text-[10px] text-slate-500 leading-normal">
+                        {tpl.description}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'media' && (
+              <div className="p-4 space-y-5">
+                <div>
+                  <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                    Media & Backgrounds
+                  </h2>
+                  <p className="text-[10px] text-slate-500 mt-0.5">
+                    Apply presets to the selected Container or Image element.
+                  </p>
                 </div>
 
-                {/* Colors Grid */}
-                {selectedNode.type === 'Container' && (
-                  <div className="space-y-2">
-                    <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Solid Colors</h3>
-                    <div className="grid grid-cols-4 gap-1.5">
-                      {SOLID_COLORS.map((c) => (
-                        <button
-                          key={c.name}
-                          onClick={() => applyPreset('color', c.value)}
-                          style={{ backgroundColor: c.value }}
-                          className="h-8 rounded border border-slate-800 hover:border-white transition-all shadow"
-                          title={c.name}
-                        />
-                      ))}
+                {!selectedNodeId || !selectedNode ? (
+                  <div className="p-4 rounded-xl bg-slate-900/40 border border-slate-900 text-center text-[10px] text-slate-500">
+                    Please select a Container box or Image block on the canvas to apply presets.
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {/* Active selection banner */}
+                    <div className="text-[10px] bg-blue-600/10 border border-blue-500/20 text-blue-400 rounded-lg p-2 flex items-center justify-between font-mono">
+                      <span>Selected: {selectedNode.type}</span>
+                    </div>
+
+                    {/* Colors Grid */}
+                    {selectedNode.type === 'Container' && (
+                      <div className="space-y-2">
+                        <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Solid Colors</h3>
+                        <div className="grid grid-cols-4 gap-1.5">
+                          {SOLID_COLORS.map((c) => (
+                            <button
+                              key={c.name}
+                              onClick={() => applyPreset('color', c.value)}
+                              style={{ backgroundColor: c.value }}
+                              className="h-8 rounded border border-slate-800 hover:border-white transition-all shadow cursor-pointer"
+                              title={c.name}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Gradients Grid */}
+                    {selectedNode.type === 'Container' && (
+                      <div className="space-y-2">
+                        <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Gradients</h3>
+                        <div className="grid grid-cols-2 gap-2">
+                          {GRADIENTS.map((g) => (
+                            <button
+                              key={g.name}
+                              onClick={() => applyPreset('gradient', g.value)}
+                              style={{ backgroundImage: g.value }}
+                              className="h-10 rounded-lg border border-slate-800 hover:border-white transition-all text-[8px] text-white font-bold flex items-end p-1 shadow truncate cursor-pointer"
+                              title={g.name}
+                            >
+                              <span className="bg-slate-950/60 px-1 py-0.5 rounded backdrop-blur-sm">{g.name}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Stock Photos Grid */}
+                    <div className="space-y-2">
+                      <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Stock Images</h3>
+                      <div className="grid grid-cols-2 gap-2">
+                        {STOCK_PHOTOS.map((ph) => (
+                          <button
+                            key={ph.name}
+                            onClick={() => applyPreset('photo', ph.url)}
+                            className="group relative h-14 rounded-lg overflow-hidden border border-slate-800 hover:border-white transition-all cursor-pointer"
+                            title={ph.name}
+                          >
+                            <img src={ph.url} alt={ph.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-200" />
+                            <div className="absolute inset-0 bg-slate-950/40 group-hover:bg-transparent transition-all flex items-end p-1">
+                              <span className="bg-slate-950/75 px-1 py-0.5 rounded backdrop-blur-sm text-[8px] text-white truncate max-w-full">{ph.name}</span>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
                     </div>
                   </div>
                 )}
+              </div>
+            )}
 
-                {/* Gradients Grid */}
-                {selectedNode.type === 'Container' && (
-                  <div className="space-y-2">
-                    <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Gradients</h3>
-                    <div className="grid grid-cols-2 gap-2">
-                      {GRADIENTS.map((g) => (
+            {activeTab === 'database' && (
+              <div className="p-4 space-y-5">
+                <div>
+                  <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                    Database Connectors
+                  </h2>
+                  <p className="text-[10px] text-slate-500 mt-0.5">
+                    Link your visual page inputs and actions to cloud data.
+                  </p>
+                </div>
+
+                <div className="space-y-4">
+                  {/* Select provider */}
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Select DB Provider</label>
+                    <div className="grid grid-cols-3 gap-1 bg-slate-950 border border-slate-900 rounded-xl p-1 shrink-0">
+                      {(['supabase', 'mongodb', 'firebase'] as const).map((prov) => (
                         <button
-                          key={g.name}
-                          onClick={() => applyPreset('gradient', g.value)}
-                          style={{ backgroundImage: g.value }}
-                          className="h-10 rounded-lg border border-slate-800 hover:border-white transition-all text-[8px] text-white font-bold flex items-end p-1 shadow truncate"
-                          title={g.name}
+                          key={prov}
+                          onClick={() => setSelectedProvider(prov)}
+                          className={`py-1 rounded-lg text-[9px] font-bold uppercase transition-all cursor-pointer ${
+                            selectedProvider === prov
+                              ? 'bg-blue-600 text-white'
+                              : 'text-slate-400 hover:text-white'
+                          }`}
                         >
-                          <span className="bg-slate-950/60 px-1 py-0.5 rounded backdrop-blur-sm">{g.name}</span>
+                          {prov === 'mongodb' ? 'Mongo' : prov === 'firebase' ? 'Firebase' : 'Supabase'}
                         </button>
                       ))}
                     </div>
                   </div>
-                )}
 
-                {/* Stock Photos Grid */}
-                <div className="space-y-2">
-                  <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Stock Images</h3>
-                  <div className="grid grid-cols-2 gap-2">
-                    {STOCK_PHOTOS.map((ph) => (
-                      <button
-                        key={ph.name}
-                        onClick={() => applyPreset('photo', ph.url)}
-                        className="group relative h-14 rounded-lg overflow-hidden border border-slate-800 hover:border-white transition-all"
-                        title={ph.name}
-                      >
-                        <img src={ph.url} alt={ph.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-200" />
-                        <div className="absolute inset-0 bg-slate-950/40 group-hover:bg-transparent transition-all flex items-end p-1">
-                          <span className="bg-slate-950/75 px-1 py-0.5 rounded backdrop-blur-sm text-[8px] text-white truncate max-w-full">{ph.name}</span>
+                  {/* Credentials forms */}
+                  <div className="space-y-3 bg-slate-900/30 border border-slate-900 p-3 rounded-xl">
+                    {selectedProvider === 'supabase' && (
+                      <div className="space-y-3">
+                        <div className="space-y-1">
+                          <label className="text-[9px] font-semibold text-slate-400">SUPABASE_URL</label>
+                          <input
+                            type="text"
+                            placeholder="https://your-project.supabase.co"
+                            value={supabaseUrl}
+                            onChange={(e) => setSupabaseUrl(e.target.value)}
+                            className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-900 rounded-lg text-xs text-white placeholder-slate-700 focus:outline-none focus:border-blue-500"
+                          />
                         </div>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {activeTab === 'database' && (
-          <div className="p-4 space-y-4">
-            <div>
-              <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-                Database Connector
-              </h2>
-              <p className="text-[10px] text-slate-500 mt-0.5">
-                Connect external cloud databases to map UI datasets.
-              </p>
-            </div>
-
-            {/* Provider Selector */}
-            <div className="space-y-1.5">
-              <label className="block text-[10px] font-semibold text-slate-500">
-                Choose Provider
-              </label>
-              <div className="grid grid-cols-3 gap-1 p-0.5 bg-slate-950 rounded-lg border border-slate-900">
-                {(['supabase', 'mongodb', 'firebase'] as const).map((prov) => (
-                  <button
-                    key={prov}
-                    onClick={() => setSelectedProvider(prov)}
-                    className={`py-1 text-[9px] uppercase font-bold rounded transition-all ${
-                      selectedProvider === prov
-                        ? 'bg-slate-800 text-blue-400 shadow-sm'
-                        : 'text-slate-500 hover:text-slate-300'
-                    }`}
-                  >
-                    {prov}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Connection Inputs */}
-            <div className="space-y-3 bg-slate-900/40 p-3 border border-slate-900 rounded-xl">
-              {selectedProvider === 'supabase' && (
-                <>
-                  <div className="space-y-1">
-                    <label className="block text-[9px] font-semibold text-slate-500">Supabase API URL</label>
-                    <input
-                      type="text"
-                      placeholder="https://xyz.supabase.co"
-                      value={supabaseUrl}
-                      onChange={(e) => setSupabaseUrl(e.target.value)}
-                      className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-slate-200 text-xs focus:outline-none focus:border-blue-500"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="block text-[9px] font-semibold text-slate-500">Anon Public Key</label>
-                    <input
-                      type="password"
-                      placeholder="eyJhbGciOi..."
-                      value={supabaseAnonKey}
-                      onChange={(e) => setSupabaseAnonKey(e.target.value)}
-                      className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-slate-200 text-xs focus:outline-none focus:border-blue-500"
-                    />
-                  </div>
-                </>
-              )}
-
-              {selectedProvider === 'mongodb' && (
-                <div className="space-y-1">
-                  <label className="block text-[9px] font-semibold text-slate-500">MongoDB Connection String</label>
-                  <input
-                    type="password"
-                    placeholder="mongodb+srv://..."
-                    value={mongodbUri}
-                    onChange={(e) => setMongodbUri(e.target.value)}
-                    className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-slate-200 text-xs focus:outline-none focus:border-blue-500"
-                  />
-                </div>
-              )}
-
-              {selectedProvider === 'firebase' && (
-                <>
-                  <div className="space-y-1">
-                    <label className="block text-[9px] font-semibold text-slate-500">Project ID</label>
-                    <input
-                      type="text"
-                      placeholder="my-firebase-app"
-                      value={firebaseProjectId}
-                      onChange={(e) => setFirebaseProjectId(e.target.value)}
-                      className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-slate-200 text-xs focus:outline-none focus:border-blue-500"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="block text-[9px] font-semibold text-slate-500">API Key</label>
-                    <input
-                      type="password"
-                      placeholder="AIzaSy..."
-                      value={firebaseApiKey}
-                      onChange={(e) => setFirebaseApiKey(e.target.value)}
-                      className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-slate-200 text-xs focus:outline-none focus:border-blue-500"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="block text-[9px] font-semibold text-slate-500">Auth Domain</label>
-                    <input
-                      type="text"
-                      placeholder="my-app.firebaseapp.com"
-                      value={firebaseAuthDomain}
-                      onChange={(e) => setFirebaseAuthDomain(e.target.value)}
-                      className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-slate-200 text-xs focus:outline-none focus:border-blue-500"
-                    />
-                  </div>
-                </>
-              )}
-
-              <button
-                onClick={handleSaveConfig}
-                className="w-full py-1.5 bg-blue-600 hover:bg-blue-500 text-white font-bold text-[11px] rounded-lg shadow transition-all cursor-pointer"
-              >
-                Save DB Connection
-              </button>
-            </div>
-
-            {/* Configured DB Banner */}
-            {dbConfig && (
-              <div className="bg-slate-900 border border-slate-800 p-3 rounded-xl flex items-center justify-between text-[11px]">
-                <div className="flex items-center gap-2">
-                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
-                  <span>Connected: <strong className="uppercase text-blue-450">{dbConfig.provider}</strong></span>
-                </div>
-              </div>
-            )}
-
-            {/* Tables Directory */}
-            {dbConfig && (
-              <div className="space-y-2.5 pt-2 border-t border-slate-900">
-                <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Schema Tables</h3>
-                {dbTables.length === 0 ? (
-                  <p className="text-[10px] text-slate-600 italic">No tables created yet. Switch to Database Flow view to add tables.</p>
-                ) : (
-                  <div className="space-y-1.5">
-                    {dbTables.map((t) => (
-                      <div key={t.id} className="flex items-center justify-between p-2 bg-slate-900/60 border border-slate-900 rounded-lg text-xs">
-                        <div className="flex items-center gap-1.5 text-slate-350">
-                          <Database className="w-3.5 h-3.5 text-slate-500" />
-                          <span className="font-mono text-[11px] text-white">{t.name}</span>
+                        <div className="space-y-1">
+                          <label className="text-[9px] font-semibold text-slate-400">SUPABASE_ANON_KEY</label>
+                          <input
+                            type="password"
+                            placeholder="eyJhbGciOiJIUzI1NiIsIn..."
+                            value={supabaseAnonKey}
+                            onChange={(e) => setSupabaseAnonKey(e.target.value)}
+                            className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-900 rounded-lg text-xs text-white placeholder-slate-700 focus:outline-none focus:border-blue-500"
+                          />
                         </div>
-                        <span className="text-[9px] text-slate-550 font-mono">({t.columns.length} cols)</span>
                       </div>
-                    ))}
+                    )}
+
+                    {selectedProvider === 'mongodb' && (
+                      <div className="space-y-1.5">
+                        <label className="text-[9px] font-semibold text-slate-400 font-sans">MONGODB_URI</label>
+                        <input
+                          type="text"
+                          placeholder="mongodb+srv://user:pass@cluster..."
+                          value={mongodbUri}
+                          onChange={(e) => setMongodbUri(e.target.value)}
+                          className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-900 rounded-lg text-xs text-white placeholder-slate-700 focus:outline-none focus:border-blue-500 font-mono"
+                        />
+                      </div>
+                    )}
+
+                    {selectedProvider === 'firebase' && (
+                      <div className="space-y-3">
+                        <div className="space-y-1">
+                          <label className="text-[9px] font-semibold text-slate-400">FIREBASE_PROJECT_ID</label>
+                          <input
+                            type="text"
+                            placeholder="your-firebase-project-id"
+                            value={firebaseProjectId}
+                            onChange={(e) => setFirebaseProjectId(e.target.value)}
+                            className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-900 rounded-lg text-xs text-white placeholder-slate-700 focus:outline-none focus:border-blue-500"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[9px] font-semibold text-slate-400">FIREBASE_API_KEY</label>
+                          <input
+                            type="password"
+                            placeholder="AIzaSyB..."
+                            value={firebaseApiKey}
+                            onChange={(e) => setFirebaseApiKey(e.target.value)}
+                            className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-900 rounded-lg text-xs text-white placeholder-slate-700 focus:outline-none focus:border-blue-500"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[9px] font-semibold text-slate-400">FIREBASE_AUTH_DOMAIN</label>
+                          <input
+                            type="text"
+                            placeholder="your-project.firebaseapp.com"
+                            value={firebaseAuthDomain}
+                            onChange={(e) => setFirebaseAuthDomain(e.target.value)}
+                            className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-900 rounded-lg text-xs text-white placeholder-slate-700 focus:outline-none focus:border-blue-500"
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    <button
+                      onClick={handleSaveConfig}
+                      className="w-full py-1.5 mt-1 bg-slate-950 hover:bg-slate-900 border border-slate-900 text-white rounded-lg text-xs font-semibold cursor-pointer shadow hover:border-slate-800 transition-all"
+                    >
+                      Save Configuration
+                    </button>
                   </div>
-                )}
+
+                  {/* Configured DB Banner */}
+                  {dbConfig && (
+                    <div className="bg-slate-900 border border-slate-800 p-3 rounded-xl flex items-center justify-between text-[11px]">
+                      <div className="flex items-center gap-2">
+                        <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+                        <span>Connected: <strong className="uppercase text-blue-450">{dbConfig.provider}</strong></span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Tables Directory */}
+                  {dbConfig && (
+                    <div className="space-y-2.5 pt-2 border-t border-slate-900">
+                      <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Schema Tables</h3>
+                      {dbTables.length === 0 ? (
+                        <p className="text-[10px] text-slate-600 italic">No tables created yet. Switch to Database Flow view to add tables.</p>
+                      ) : (
+                        <div className="space-y-1.5">
+                          {dbTables.map((t) => (
+                            <div key={t.id} className="flex items-center justify-between p-2 bg-slate-900/60 border border-slate-900 rounded-lg text-xs">
+                              <div className="flex items-center gap-1.5 text-slate-350">
+                                <Database className="w-3.5 h-3.5 text-slate-500" />
+                                <span className="font-mono text-[11px] text-white">{t.name}</span>
+                              </div>
+                              <span className="text-[9px] text-slate-550 font-mono font-sans">({t.columns.length} cols)</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </div>
-        )}
-      </div>
 
-      {/* Footer quick links / state */}
-      <div className="p-4 border-t border-slate-900 bg-slate-950/50 space-y-2">
-        <div className="flex items-center justify-between text-[11px] text-slate-500">
-          <span>Active Project:</span>
-          <span className="font-mono text-slate-400 truncate max-w-[120px]" title={project?.name}>
-            {project?.name}
-          </span>
-        </div>
-      </div>
-    </aside>
+          {/* Footer quick links / state */}
+          <div className="p-4 border-t border-slate-900 bg-slate-950/50 space-y-2 shrink-0">
+            <div className="flex items-center justify-between text-[11px] text-slate-500">
+              <span>Active Project:</span>
+              <span className="font-mono text-slate-400 truncate max-w-[120px]" title={project?.name}>
+                {project?.name}
+              </span>
+            </div>
+          </div>
+        </aside>
+      )}
+    </div>
   );
 }

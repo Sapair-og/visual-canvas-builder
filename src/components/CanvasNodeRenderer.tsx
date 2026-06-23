@@ -17,10 +17,27 @@ interface CanvasNodeRendererProps {
 }
 
 export default function CanvasNodeRenderer({ node, parent }: CanvasNodeRendererProps) {
-  const { selectedNodeId, selectNode, addNode, moveNode, updateNodeProps, snapToGrid, guides, isPreview } = useEditor();
+  const { 
+    selectedNodeId, 
+    selectNode, 
+    addNode, 
+    moveNode, 
+    updateNodeProps, 
+    snapToGrid, 
+    guides, 
+    isPreview,
+    activeDragNodeId,
+    setActiveDragNodeId,
+    activeDragType,
+    setActiveDragType,
+    activeDragGrabOffset,
+    setActiveDragGrabOffset
+  } = useEditor();
+  
   const [isDragOver, setIsDragOver] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [localText, setLocalText] = useState(node.props.text || '');
+  const [activeSmartGuides, setActiveSmartGuides] = useState<{ type: 'v' | 'h', value: number }[]>([]);
 
   useEffect(() => {
     setLocalText(node.props.text || '');
@@ -59,36 +76,164 @@ export default function CanvasNodeRenderer({ node, parent }: CanvasNodeRendererP
     e.dataTransfer.setData('application/react-craft-offset-x', offsetX.toString());
     e.dataTransfer.setData('application/react-craft-offset-y', offsetY.toString());
 
+    // Update global drag states for smart guidelines snapping
+    setActiveDragNodeId(node.id);
+    setActiveDragGrabOffset({ x: offsetX, y: offsetY });
+
     e.stopPropagation();
+  };
+
+  const handleDragEnd = () => {
+    setActiveDragNodeId(null);
+    setActiveDragType(null);
+    setActiveDragGrabOffset(null);
+    setActiveSmartGuides([]);
   };
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     setIsDragOver(true);
+
+    if (node.type !== 'Container') return;
+
+    const dragNodeId = activeDragNodeId;
+    const dragType = activeDragType;
+    const grabOffset = activeDragGrabOffset || { x: 0, y: 0 };
+
+    if (!dragNodeId && !dragType) return;
+
+    // Calculate dimensions of the dragging element
+    let dragWidth = 180;
+    let dragHeight = 40;
+
+    if (dragType) {
+      if (dragType === 'Container') { dragWidth = 240; dragHeight = 180; }
+      else if (dragType === 'TextBlock') { dragWidth = 180; dragHeight = 40; }
+      else if (dragType === 'Button') { dragWidth = 120; dragHeight = 36; }
+      else if (dragType === 'ImageBlock') { dragWidth = 240; dragHeight = 160; }
+      else if (dragType === 'Divider') { dragWidth = e.currentTarget.clientWidth; dragHeight = 2; }
+      else if (dragType === 'Icon') { dragWidth = 32; dragHeight = 32; }
+    } else if (dragNodeId) {
+      const draggedElement = document.getElementById(dragNodeId);
+      if (draggedElement) {
+        dragWidth = draggedElement.offsetWidth;
+        dragHeight = draggedElement.offsetHeight;
+      }
+    }
+
+    const containerRect = e.currentTarget.getBoundingClientRect();
+    const mouseX = e.clientX - containerRect.left;
+    const mouseY = e.clientY - containerRect.top;
+
+    const candidateX = mouseX - grabOffset.x;
+    const candidateY = mouseY - grabOffset.y;
+
+    const left = candidateX;
+    const centerX = candidateX + dragWidth / 2;
+    const right = candidateX + dragWidth;
+
+    const top = candidateY;
+    const centerY = candidateY + dragHeight / 2;
+    const bottom = candidateY + dragHeight;
+
+    // Gather potential alignment coordinates (borders + center of parent container)
+    const xLines: number[] = [0, containerRect.width / 2, containerRect.width];
+    const yLines: number[] = [0, containerRect.height / 2, containerRect.height];
+
+    // Gather alignment coordinates from sibling elements
+    node.children.forEach(child => {
+      if (child.id === dragNodeId) return;
+      const childStyle = child.props.style || {};
+      if (childStyle.position !== 'relative') {
+        const sibLeft = parsePixelVal(childStyle.left);
+        const sibTop = parsePixelVal(childStyle.top);
+        const sibWidth = parsePixelVal(childStyle.width, 180);
+        const sibHeight = parsePixelVal(childStyle.height, 40);
+
+        xLines.push(sibLeft, sibLeft + sibWidth / 2, sibLeft + sibWidth);
+        yLines.push(sibTop, sibTop + sibHeight / 2, sibTop + sibHeight);
+      }
+    });
+
+    const THRESHOLD = 8;
+    let snappedX = candidateX;
+    let snappedY = candidateY;
+    const guidesFound: { type: 'v' | 'h'; value: number }[] = [];
+
+    let bestSnapX: { val: number; guide: number; diff: number } | null = null;
+    let bestSnapY: { val: number; guide: number; diff: number } | null = null;
+
+    for (const targetX of xLines) {
+      const diffLeft = Math.abs(left - targetX);
+      if (diffLeft < THRESHOLD && (!bestSnapX || diffLeft < bestSnapX.diff)) {
+        bestSnapX = { val: targetX, guide: targetX, diff: diffLeft };
+      }
+      const diffCenter = Math.abs(centerX - targetX);
+      if (diffCenter < THRESHOLD && (!bestSnapX || diffCenter < bestSnapX.diff)) {
+        bestSnapX = { val: targetX - dragWidth / 2, guide: targetX, diff: diffCenter };
+      }
+      const diffRight = Math.abs(right - targetX);
+      if (diffRight < THRESHOLD && (!bestSnapX || diffRight < bestSnapX.diff)) {
+        bestSnapX = { val: targetX - dragWidth, guide: targetX, diff: diffRight };
+      }
+    }
+
+    for (const targetY of yLines) {
+      const diffTop = Math.abs(top - targetY);
+      if (diffTop < THRESHOLD && (!bestSnapY || diffTop < bestSnapY.diff)) {
+        bestSnapY = { val: targetY, guide: targetY, diff: diffTop };
+      }
+      const diffCenter = Math.abs(centerY - targetY);
+      if (diffCenter < THRESHOLD && (!bestSnapY || diffCenter < bestSnapY.diff)) {
+        bestSnapY = { val: targetY - dragHeight / 2, guide: targetY, diff: diffCenter };
+      }
+      const diffBottom = Math.abs(bottom - targetY);
+      if (diffBottom < THRESHOLD && (!bestSnapY || diffBottom < bestSnapY.diff)) {
+        bestSnapY = { val: targetY - dragHeight, guide: targetY, diff: diffBottom };
+      }
+    }
+
+    if (bestSnapX) {
+      snappedX = bestSnapX.val;
+      guidesFound.push({ type: 'v', value: bestSnapX.guide });
+    }
+    if (bestSnapY) {
+      snappedY = bestSnapY.val;
+      guidesFound.push({ type: 'h', value: bestSnapY.guide });
+    }
+
+    setActiveSmartGuides(guidesFound);
+
+    (e.currentTarget as any)._snappedX = snappedX;
+    (e.currentTarget as any)._snappedY = snappedY;
   };
 
   const handleDragLeave = () => {
     setIsDragOver(false);
+    setActiveSmartGuides([]);
   };
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     setIsDragOver(false);
+    setActiveSmartGuides([]);
 
     const droppedType = e.dataTransfer.getData('application/react-craft-type') as NodeType;
     const draggedNodeId = e.dataTransfer.getData('application/react-craft-node-id');
 
-    // Calculate mouse coordinate delta inside drop zone container
     const rect = e.currentTarget.getBoundingClientRect();
     const grabOffsetX = parseFloat(e.dataTransfer.getData('application/react-craft-offset-x') || '0');
     const grabOffsetY = parseFloat(e.dataTransfer.getData('application/react-craft-offset-y') || '0');
     
-    let x = e.clientX - rect.left - (droppedType ? 0 : grabOffsetX);
-    let y = e.clientY - rect.top - (droppedType ? 0 : grabOffsetY);
+    const hasSnappedX = (e.currentTarget as any)._snappedX !== undefined;
+    const hasSnappedY = (e.currentTarget as any)._snappedY !== undefined;
 
-    if (snapToGrid) {
+    let x = hasSnappedX ? (e.currentTarget as any)._snappedX : (e.clientX - rect.left - (droppedType ? 0 : grabOffsetX));
+    let y = hasSnappedY ? (e.currentTarget as any)._snappedY : (e.clientY - rect.top - (droppedType ? 0 : grabOffsetY));
+
+    if (snapToGrid && !hasSnappedX && !hasSnappedY) {
       const vGuides = guides.filter(g => g.type === 'vertical');
       const snapX = vGuides.find(g => Math.abs(g.value - x) <= 8);
       
@@ -124,11 +269,18 @@ export default function CanvasNodeRenderer({ node, parent }: CanvasNodeRendererP
     x = Math.max(0, Math.min(x, maxX));
     y = Math.max(0, Math.min(y, maxY));
 
+    // Clean up temporary snapping values
+    delete (e.currentTarget as any)._snappedX;
+    delete (e.currentTarget as any)._snappedY;
+
+    // Reset global dragging states
+    setActiveDragNodeId(null);
+    setActiveDragType(null);
+    setActiveDragGrabOffset(null);
+
     if (droppedType) {
-      // Adding new element from library
       addNode(node.id, droppedType, undefined, { x, y });
     } else if (draggedNodeId && draggedNodeId !== node.id) {
-      // Moving existing element in hierarchy
       moveNode(draggedNodeId, node.id, { x, y });
     }
   };
@@ -154,35 +306,22 @@ export default function CanvasNodeRenderer({ node, parent }: CanvasNodeRendererP
       let newWidthVal = startWidth + deltaX;
       let newHeightVal = startHeight + deltaY;
 
-      const parentElement = targetElement.parentElement;
-      const elementLeft = parsePixelVal(node.props.style?.left, 0);
-      const elementTop = parsePixelVal(node.props.style?.top, 0);
-
-      if (parentElement) {
-        const parentW = parentElement.offsetWidth;
-        const parentH = parentElement.offsetHeight;
-        newWidthVal = Math.max(16, Math.min(newWidthVal, parentW - elementLeft));
-        newHeightVal = Math.max(16, Math.min(newHeightVal, parentH - elementTop));
+      if (snapToGrid) {
+        newWidthVal = Math.round(newWidthVal / 16) * 16;
+        newHeightVal = Math.round(newHeightVal / 16) * 16;
       }
 
-      if (snapToGrid) {
-        const vGuides = guides.filter(g => g.type === 'vertical');
-        const hGuides = guides.filter(g => g.type === 'horizontal');
-        
-        const edgeX = elementLeft + newWidthVal;
-        const edgeY = elementTop + newHeightVal;
-        
-        const snapX = vGuides.find(g => Math.abs(g.value - edgeX) <= 8);
-        const snapY = hGuides.find(g => Math.abs(g.value - edgeY) <= 8);
-        
-        newWidthVal = snapX ? (snapX.value - elementLeft) : Math.round(newWidthVal / 16) * 16;
-        newHeightVal = snapY ? (snapY.value - elementTop) : Math.round(newHeightVal / 16) * 16;
+      newWidthVal = Math.max(20, newWidthVal);
+      newHeightVal = Math.max(20, newHeightVal);
 
+      // Clamp resize coordinates inside container parent boundaries
+      if (parent) {
+        const parentElement = targetElement.parentElement;
         if (parentElement) {
-          const parentW = parentElement.offsetWidth;
-          const parentH = parentElement.offsetHeight;
-          newWidthVal = Math.max(16, Math.min(newWidthVal, parentW - elementLeft));
-          newHeightVal = Math.max(16, Math.min(newHeightVal, parentH - elementTop));
+          const maxW = parentElement.offsetWidth - targetElement.offsetLeft;
+          const maxH = parentElement.offsetHeight - targetElement.offsetTop;
+          newWidthVal = Math.min(newWidthVal, maxW);
+          newHeightVal = Math.min(newHeightVal, maxH);
         }
       }
 
@@ -221,16 +360,17 @@ export default function CanvasNodeRenderer({ node, parent }: CanvasNodeRendererP
   };
 
   const renderResizeHandles = () => {
-    if (!isSelected || node.props.locked) return null;
+    if (isPreview || !isSelected || node.props.locked) return null;
+
     return (
       <>
-        {/* Right border resize handle */}
+        {/* Right side width resize handle */}
         <div
           onMouseDown={(e) => handleResizeStart(e, 'horizontal')}
-          className="absolute top-1/2 right-[-5px] translate-y-[-50%] w-2.5 h-2.5 bg-blue-500 border border-white rounded-full cursor-ew-resize hover:scale-125 z-40 shadow transition-transform"
+          className="absolute right-[-5px] top-1/2 translate-y-[-50%] w-2.5 h-2.5 bg-blue-500 border border-white rounded-full cursor-ew-resize hover:scale-125 z-40 shadow transition-transform"
           title="Drag to resize width"
         />
-        {/* Bottom border resize handle */}
+        {/* Bottom side height resize handle */}
         <div
           onMouseDown={(e) => handleResizeStart(e, 'vertical')}
           className="absolute bottom-[-5px] left-1/2 translate-x-[-50%] w-2.5 h-2.5 bg-blue-500 border border-white rounded-full cursor-ns-resize hover:scale-125 z-40 shadow transition-transform"
@@ -258,23 +398,11 @@ export default function CanvasNodeRenderer({ node, parent }: CanvasNodeRendererP
 
     const layerNo = node.props.layerNo !== undefined ? Number(node.props.layerNo) : 1;
 
-    // Check siblings to enforce flow vs absolute stacking
-    let hasSiblingWithSameLayer = false;
-    if (parent && parent.children) {
-      const siblings = parent.children.filter(c => c.id !== node.id);
-      hasSiblingWithSameLayer = siblings.some(sibling => {
-        const sibLayerNo = sibling.props.layerNo !== undefined ? Number(sibling.props.layerNo) : 1;
-        return sibLayerNo === layerNo;
-      });
-    }
-
-    const forceRelative = node.id !== 'root' && hasSiblingWithSameLayer;
-
     return {
-      position: node.id === 'root' ? 'relative' : (forceRelative ? 'relative' : (s.position || 'absolute')),
-      left: forceRelative ? undefined : s.left,
-      top: forceRelative ? undefined : s.top,
-      zIndex: forceRelative ? undefined : layerNo,
+      position: node.id === 'root' ? 'relative' : (s.position || 'absolute'),
+      left: s.left,
+      top: s.top,
+      zIndex: layerNo,
 
       width: s.width,
       height: s.height,
@@ -348,12 +476,14 @@ export default function CanvasNodeRenderer({ node, parent }: CanvasNodeRendererP
       case 'Container':
         return (
           <div
+            id={node.id}
             onClick={handleClick}
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
             draggable={node.id !== 'root'}
             onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
             style={inlineStyles}
             className={`${editorOutlineClass} ${node.props.className || ''}`}
           >
@@ -376,6 +506,26 @@ export default function CanvasNodeRenderer({ node, parent }: CanvasNodeRendererP
             )}
             {childElements}
             {renderResizeHandles()}
+
+            {/* Canva-style smart alignment guide lines */}
+            {!isPreview && activeSmartGuides.map((guide, idx) => (
+              <div
+                key={idx}
+                style={{
+                  position: 'absolute',
+                  left: guide.type === 'v' ? `${guide.value}px` : 0,
+                  right: guide.type === 'v' ? undefined : 0,
+                  top: guide.type === 'h' ? `${guide.value}px` : 0,
+                  bottom: guide.type === 'h' ? undefined : 0,
+                  width: guide.type === 'v' ? '1px' : '100%',
+                  height: guide.type === 'h' ? '1px' : '100%',
+                  borderLeft: guide.type === 'v' ? '1px dashed #d946ef' : undefined,
+                  borderTop: guide.type === 'h' ? '1px dashed #d946ef' : undefined,
+                  pointerEvents: 'none',
+                  zIndex: 100,
+                }}
+              />
+            ))}
           </div>
         );
 
@@ -434,10 +584,12 @@ export default function CanvasNodeRenderer({ node, parent }: CanvasNodeRendererP
         }
         return (
           <div
+            id={node.id}
             onClick={handleClick}
             onDoubleClick={() => setIsEditing(true)}
             draggable={!isPreview && !isSelected}
             onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
             style={inlineStyles}
             className={`${editorOutlineClass} ${node.props.className || ''}`}
           >
@@ -509,10 +661,12 @@ export default function CanvasNodeRenderer({ node, parent }: CanvasNodeRendererP
         }
         return (
           <div
+            id={node.id}
             onClick={handleClick}
             onDoubleClick={() => setIsEditing(true)}
             draggable={!isPreview && !isSelected}
             onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
             style={inlineStyles}
             className={`${editorOutlineClass} ${node.props.className || ''}`}
           >
@@ -551,9 +705,11 @@ export default function CanvasNodeRenderer({ node, parent }: CanvasNodeRendererP
       case 'ImageBlock':
         return (
           <div
+            id={node.id}
             onClick={handleClick}
-            draggable
+            draggable={!isPreview && !isSelected}
             onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
             style={inlineStyles}
             className={`${editorOutlineClass} ${node.props.className || ''}`}
           >
@@ -580,9 +736,11 @@ export default function CanvasNodeRenderer({ node, parent }: CanvasNodeRendererP
       case 'Divider':
         return (
           <div
+            id={node.id}
             onClick={handleClick}
-            draggable
+            draggable={!isPreview && !isSelected}
             onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
             style={inlineStyles}
             className={`${editorOutlineClass} ${node.props.className || ''}`}
           >
@@ -605,9 +763,11 @@ export default function CanvasNodeRenderer({ node, parent }: CanvasNodeRendererP
         const IconComponent = (LucideIcons as any)[node.props.iconName || 'Star'] || LucideIcons.Star;
         return (
           <div
+            id={node.id}
             onClick={handleClick}
-            draggable
+            draggable={!isPreview && !isSelected}
             onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
             style={{
               ...inlineStyles,
               display: 'inline-flex',

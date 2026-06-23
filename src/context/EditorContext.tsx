@@ -72,6 +72,12 @@ interface EditorContextType {
   copyNode: (nodeId: string) => void;
   cutNode: (nodeId: string) => void;
   pasteNode: (targetParentId: string | null) => void;
+  activeDragNodeId: string | null;
+  setActiveDragNodeId: (id: string | null) => void;
+  activeDragType: NodeType | null;
+  setActiveDragType: (type: NodeType | null) => void;
+  activeDragGrabOffset: { x: number; y: number } | null;
+  setActiveDragGrabOffset: (offset: { x: number; y: number } | null) => void;
 }
 
 export interface EditorGuide {
@@ -292,6 +298,11 @@ export const EditorProvider = ({ children }: { children: ReactNode }) => {
   const [guides, setGuides] = useState<EditorGuide[]>([]);
   const [isPreview, setIsPreview] = useState<boolean>(false);
   const [clipboard, setClipboard] = useState<{ type: 'copy' | 'cut'; node: CanvasNode } | null>(null);
+
+  // Canva drag alignment smart snapping states
+  const [activeDragNodeId, setActiveDragNodeId] = useState<string | null>(null);
+  const [activeDragType, setActiveDragType] = useState<NodeType | null>(null);
+  const [activeDragGrabOffset, setActiveDragGrabOffset] = useState<{ x: number; y: number } | null>(null);
 
   // Sync canvasState to pages object when changes happen
   useEffect(() => {
@@ -1084,7 +1095,13 @@ export const EditorProvider = ({ children }: { children: ReactNode }) => {
         clipboard,
         copyNode,
         cutNode,
-        pasteNode
+        pasteNode,
+        activeDragNodeId,
+        setActiveDragNodeId,
+        activeDragType,
+        setActiveDragType,
+        activeDragGrabOffset,
+        setActiveDragGrabOffset
       }}
     >
       {children}
